@@ -10,6 +10,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Finanças">
 <title>Controle Financeiro</title>
+<script>try { const t = localStorage.getItem('cf_tema'); if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t; } catch(e) {}</script>
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icon.svg">
@@ -34,6 +35,18 @@
     --shadow:0 1px 0 rgba(255,255,255,.02); --shadow-up:0 8px 30px rgba(0,0,0,.5);
     --hero1:#0f5f58; --hero2:#0d2f2c;
   }
+}
+/* tema escolhido à mão nos Ajustes (data-theme no <html>) */
+:root{color-scheme:light}
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){color-scheme:dark} }
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --bg:#0b0e13; --card:#141922; --card2:#1a202b; --text:#e8edf4; --muted:#8b97a8; --line:#232a36;
+  --brand:#2dd4bf; --brand-soft:#11302d; --on-brand:#042f2b;
+  --pos:#4ade80; --neg:#f87171; --warn:#fb923c;
+  --pos-soft:#10291b; --neg-soft:#331717; --warn-soft:#33210f;
+  --shadow:0 1px 0 rgba(255,255,255,.02); --shadow-up:0 8px 30px rgba(0,0,0,.5);
+  --hero1:#0f5f58; --hero2:#0d2f2c;
 }
 *{box-sizing:border-box}
 html,body{margin:0}
@@ -956,10 +969,19 @@ function abrirConfig(){
       <button class="btn sec block" style="margin-bottom:10px" onclick="$('#sheet').remove();abrirLimites()">${ic('target',17)}Limites por categoria</button>
       <button class="btn sec block" onclick="sair()">Sair da conta</button>` :
       `<div class="card">Você está no modo demonstração.</div><button class="btn block" onclick="lsSet('cf_demo',null);location.reload()">Conectar à minha planilha</button>`}
+    <span class="lbl" style="margin-top:18px">Tema neste aparelho</span>
+    <div class="seg" id="segTema">${[['auto','Automático'],['light','Claro'],['dark','Escuro']].map(([v, n]) => `<button type="button" class="${(lsGet('cf_tema') || 'auto') === v ? 'on' : ''}" onclick="setTema('${v}')">${n}</button>`).join('')}</div>
+    <p class="small muted" style="margin-top:-4px">Automático segue o modo claro/escuro do celular ou do computador.</p>
     <p class="small muted" style="margin-top:16px">Os lançamentos são gravados direto na aba ${esc(S.sheetName)} (Tabela1). Fórmulas como "Saldo projetado" e "Categoria Dashboard" continuam sendo calculadas pelo Excel.</p>
     ${!CLIENT_ID && S.mode==='graph' ? `<button class="btn sec sm" onclick="lsSet('cf_clientId',null);location.reload()">Trocar ID do aplicativo</button>` : ''}
   </div>`;
   document.body.appendChild(bg);
+}
+function setTema(v){
+  lsSet('cf_tema', v === 'auto' ? null : v);
+  if (v === 'auto') delete document.documentElement.dataset.theme; else document.documentElement.dataset.theme = v;
+  document.querySelectorAll('#segTema button').forEach((b, i) => b.classList.toggle('on', ['auto','light','dark'][i] === v));
+  render(); // redesenha os gráficos com as cores do tema
 }
 async function sair(){ lsSet('cf_tab',null); lsSet('cf_cache',null); await msalApp.logoutRedirect({ account: msalApp.getActiveAccount() }); }
 async function recarregar(){

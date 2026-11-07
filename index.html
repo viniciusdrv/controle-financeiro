@@ -763,7 +763,9 @@ function abrirForm(rowNum, prefill){
   if (rowNum < 0) return toast('Este lançamento está guardado no aparelho e vai para a planilha quando houver internet.', 4000);
   const ed = rowNum ? S.rows.find(r => r.row === rowNum) : null;
   const l = ed ? { ...ed, tipo: normTipo(ed.tipo) } : { data: today(), desc:'', cat:'', tipo:'Saída', forma:'Débito', status:'Pago', valor:'', obs:'', rec:'Única', ...(prefill || {}) };
-  const recOpc = ed ? ['Única','Recorrente', ...(ed.rec === 'Parcelada' ? ['Parcelada'] : [])] : ['Única','Recorrente','Parcelada'];
+  const recOpc = ['Única','Recorrente','Parcelada'];
+  const parcAtual = ed ? ed.desc.match(/\s(\d+)\/(\d+)$/) : null; // editando algo que já é uma parcela ("MBA 2/12")
+  if (ed && parcAtual && !l.rec) l.rec = 'Parcelada';
   const descs = [...new Set(S.rows.map(r => r.desc).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'pt-BR'));
   const opt = (arr, sel) => arr.map(v => `<option ${v===sel?'selected':''}>${esc(v)}</option>`).join('');
   const bg = document.createElement('div'); bg.className = 'sheet-bg'; bg.id = 'sheet';
@@ -784,7 +786,8 @@ function abrirForm(rowNum, prefill){
     <label class="f"><span>Observação (opcional)</span><input class="i" id="fObs" value="${esc(l.obs)}"></label>
     <span class="lbl">Esse lançamento é</span>
     <div class="seg" id="segRec">${recOpc.map(v => `<button type="button" class="${v === l.rec ? 'on' : ''}" data-v="${v}">${{'Única':'Única vez','Recorrente':'Todo mês','Parcelada':'Parcelado'}[v]}</button>`).join('')}</div>
-    ${ed ? '' : `<div id="parcBox" style="display:none"><div class="row">
+    ${parcAtual ? `<div id="parcAtual" class="small muted" style="display:${l.rec === 'Parcelada' ? '' : 'none'};margin:-4px 0 12px">Esta é a parcela ${parcAtual[1]} de ${parcAtual[2]}. As outras parcelas são lançamentos separados e não são alteradas aqui.</div>`
+    : `<div id="parcBox" style="display:${ed && l.rec === 'Parcelada' ? '' : 'none'}"><div class="row">
       <label class="f"><span>Nº de parcelas</span><input class="i" id="fNParc" type="number" min="2" max="60" value="2" inputmode="numeric"></label>
       <label class="f"><span>O valor digitado é</span><select class="i" id="fParcModo"><option value="parcela">de cada parcela</option><option value="total">o total da compra</option></select></label>
     </div><div id="parcInfo" class="small muted" style="margin:-4px 0 10px"></div></div>`}
@@ -814,20 +817,22 @@ function abrirForm(rowNum, prefill){
   });
   $('#fData').addEventListener('change', e => { if (!ed) $('#fStatus').value = e.target.value > today() ? 'Programado' : 'Pago'; });
   bg.querySelectorAll('#segRec button').forEach(b => b.onclick = () => setRec(b.dataset.v));
-  if (!ed){
+  if (!parcAtual){
     const info = () => {
       const lst = gerarParcelas(lerForm(), parseInt($('#fNParc').value, 10), $('#fParcModo').value);
-      $('#parcInfo').textContent = lst ? `${lst.length}× de ${fmtBRL(lst[0].valor)} (total ${fmtBRL(lst.reduce((s,x)=>s+x.valor,0))}), de ${fmtDataLonga(lst[0].data)} a ${fmtDataLonga(lst[lst.length-1].data)}. A descrição recebe "1/${lst.length}", "2/${lst.length}"…` : 'Informe valor, data e de 2 a 60 parcelas.';
+      $('#parcInfo').textContent = lst ? `${lst.length}× de ${fmtBRL(lst[0].valor)} (total ${fmtBRL(lst.reduce((s,x)=>s+x.valor,0))}), de ${fmtDataLonga(lst[0].data)} a ${fmtDataLonga(lst[lst.length-1].data)}. A descrição recebe "1/${lst.length}", "2/${lst.length}"…${ed ? ' Este lançamento vira a parcela 1 e as outras são criadas nos meses seguintes.' : ''}` : 'Informe valor, data e de 2 a 60 parcelas.';
     };
     S._parcInfo = info;
     ['#fNParc','#fParcModo','#fValor','#fData'].forEach(s => $(s).addEventListener('input', () => { if (recAtual() === 'Parcelada') info(); }));
-    setTimeout(() => $('#fValor')?.focus(), 50);
-  }
+    if (ed && l.rec === 'Parcelada') info();
+  } else S._parcInfo = null;
+  if (!ed) setTimeout(() => $('#fValor')?.focus(), 50);
 }
 const recAtual = () => document.querySelector('#segRec button.on')?.dataset.v || '';
 function setRec(v){
   document.querySelectorAll('#segRec button').forEach(x => x.classList.toggle('on', x.dataset.v === v));
   const box = $('#parcBox'); if (box){ box.style.display = v === 'Parcelada' ? '' : 'none'; if (v === 'Parcelada') S._parcInfo?.(); }
+  const atual = $('#parcAtual'); if (atual) atual.style.display = v === 'Parcelada' ? '' : 'none';
 }
 function lerForm(){
   return {
@@ -859,7 +864,8 @@ async function salvar(rowNum){
   if (!l.data) return toast('Informe a data');
   if (!l.cat) return toast('Escolha a categoria');
   let lista = [l];
-  if (!rowNum && l.rec === 'Parcelada'){
+  // novo lançamento parcelado, ou um lançamento comum sendo transformado em parcelado (o parcBox só existe nesses casos)
+  if (l.rec === 'Parcelada' && $('#parcBox')){
     lista = gerarParcelas(l, parseInt($('#fNParc').value, 10), $('#fParcModo').value);
     if (!lista) return toast('Informe de 2 a 60 parcelas');
   }
@@ -867,11 +873,15 @@ async function salvar(rowNum){
   try {
     let guardado = false;
     if (rowNum){
-      if (S.mode === 'graph'){ await gravarLinha(rowNum, l); await carregarGraph(); }
-      else Object.assign(S.rows.find(r => r.row === rowNum), l);
+      // a linha editada recebe a 1ª parcela (ou o próprio lançamento); as demais parcelas entram como novas
+      if (S.mode === 'graph'){ await gravarLinha(rowNum, lista[0]); if (lista.length === 1) await carregarGraph(); }
+      else Object.assign(S.rows.find(r => r.row === rowNum), lista[0]);
+      if (lista.length > 1) guardado = await inserirNovos(lista.slice(1));
     } else guardado = await inserirNovos(lista);
     $('#sheet')?.remove();
-    toast(guardado ? 'Sem internet: guardado no aparelho, será enviado à planilha depois' : rowNum ? 'Alterações salvas ✓' : lista.length > 1 ? `${lista.length} parcelas lançadas ✓` : 'Lançado ✓', guardado ? 4500 : 2600);
+    toast(guardado ? 'Sem internet: guardado no aparelho, será enviado à planilha depois'
+      : rowNum ? (lista.length > 1 ? `Transformado em ${lista.length} parcelas ✓` : 'Alterações salvas ✓')
+      : lista.length > 1 ? `${lista.length} parcelas lançadas ✓` : 'Lançado ✓', guardado ? 4500 : 2600);
     render();
   } catch(e){ btn.disabled = false; btn.textContent = 'Tentar de novo'; toast('Erro: ' + e.message, 5000); }
 }

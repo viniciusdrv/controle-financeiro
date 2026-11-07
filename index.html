@@ -226,6 +226,7 @@ input.mini{width:108px;padding:8px 10px;font-size:15px;text-align:right;flex:0 0
 const CLIENT_ID = '5f1e7927-b93f-4d16-9d87-628370dd7e12';
 const FILE_PATH = '/PESSOAL/Controle Financeiro.xlsx';
 const TABLE_NAME = 'Tabela1';
+const INICIO_CONTROLE = '2026-11'; // o app não mostra meses antes deste (histórico anterior foi arquivado no backup)
 const CARTAO_VENCIMENTO = 12; // dia em que a fatura vence: compras no cartão são gravadas nesse dia do mês da fatura
 const CARTAO_MELHOR_DIA = 5;  // compras a partir deste dia caem na fatura do mês seguinte
 
@@ -542,7 +543,7 @@ function resumoMes(mes){
   const menor = saldos.length ? saldos.reduce((a,b) => b.saldo < a.saldo ? b : a) : null;
   return { rs, ent, sai, inv, cartao, porCat, pendente, menor };
 }
-function mesesComDados(){ return [...new Set(S.rows.filter(r=>r.data).map(r => ym(r.data)))].sort(); }
+function mesesComDados(){ return [...new Set(S.rows.filter(r=>r.data).map(r => ym(r.data)))].filter(m => S.mode === 'demo' || m >= INICIO_CONTROLE).sort(); }
 function nomeMes(m){ const [y,mm] = m.split('-').map(Number); return `${MESES_LONGO[mm-1]} ${y}`; }
 function addMes(m, n){ const [y,mm] = m.split('-').map(Number); const d = new Date(y, mm-1+n, 1); return `${d.getFullYear()}-${pad(d.getMonth()+1)}`; }
 /* fatura do cartão e previsões: o usuário escolhe só o mês, o app grava uma data padrão */
@@ -702,7 +703,8 @@ const telas = {
   }
 };
 function navMes(mes){
-  return `<div class="monthnav"><button class="iconbtn" aria-label="Mês anterior" onclick="S.mes=addMes(S.mes,-1);render()">${ic('left',19)}</button><strong>${nomeMes(mes)}</strong><button class="iconbtn" aria-label="Próximo mês" onclick="S.mes=addMes(S.mes,1);render()">${ic('right',19)}</button></div>`;
+  const noInicio = S.mode !== 'demo' && mes <= INICIO_CONTROLE;
+  return `<div class="monthnav"><button class="iconbtn" aria-label="Mês anterior" ${noInicio ? 'disabled style="opacity:.35;cursor:default"' : ''} onclick="S.mes=addMes(S.mes,-1);render()">${ic('left',19)}</button><strong>${nomeMes(mes)}</strong><button class="iconbtn" aria-label="Próximo mês" onclick="S.mes=addMes(S.mes,1);render()">${ic('right',19)}</button></div>`;
 }
 function barras(obj, clicavel){
   const arr = Object.entries(obj).sort((a,b)=>b[1]-a[1]); const max = arr[0]?.[1] || 1;
@@ -862,7 +864,7 @@ function abrirForm(rowNum, prefill){
 /* Data do lançamento: dia exato, mês da fatura (cartão) ou só o mês (previsão) */
 function opcoesMes(sel){
   const base = ym(today()), meses = [];
-  for (let k = -3; k <= 14; k++) meses.push(addMes(base, k));
+  for (let k = -3; k <= 14; k++){ const m = addMes(base, k); if (S.mode === 'demo' || m >= INICIO_CONTROLE) meses.push(m); }
   if (sel && !meses.includes(ym(sel))) meses.push(ym(sel));
   return meses.sort().map(m => `<option value="${m}" ${sel && ym(sel) === m ? 'selected' : ''}>${MESES[+m.slice(5) - 1]} ${m.slice(0, 4)}</option>`).join('');
 }

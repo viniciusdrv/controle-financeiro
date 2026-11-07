@@ -75,6 +75,7 @@ header.top h1 small{display:block;font-size:12px;font-weight:500;color:var(--mut
 .hero::after{content:"";position:absolute;right:-60px;top:-70px;width:220px;height:220px;border-radius:50%;background:radial-gradient(circle,rgba(255,255,255,.16),transparent 70%)}
 .hero .l{font-size:13px;opacity:.8;font-weight:500}
 .hero .v{font-size:34px;font-weight:700;letter-spacing:-.02em;margin:2px 0 10px;line-height:1.15}
+.hero .proj{font-size:13.5px;opacity:.9;margin:-6px 0 12px} .hero .proj b{font-weight:650}
 .hero .pill{display:inline-flex;align-items:center;gap:7px;background:rgba(255,255,255,.14);border-radius:99px;padding:6px 11px;font-size:12.5px;font-weight:600}
 .hero .pill i{width:8px;height:8px;border-radius:50%;background:#4ade80;box-shadow:0 0 0 3px rgba(74,222,128,.25)}
 .hero .pill.warn i{background:#fbbf24;box-shadow:0 0 0 3px rgba(251,191,36,.25)} .hero .pill.bad i{background:#f87171;box-shadow:0 0 0 3px rgba(248,113,113,.3)}
@@ -225,6 +226,8 @@ input.mini{width:108px;padding:8px 10px;font-size:15px;text-align:right;flex:0 0
 const CLIENT_ID = '5f1e7927-b93f-4d16-9d87-628370dd7e12';
 const FILE_PATH = '/PESSOAL/Controle Financeiro.xlsx';
 const TABLE_NAME = 'Tabela1';
+const CARTAO_VENCIMENTO = 12; // dia em que a fatura vence: compras no cartão são gravadas nesse dia do mês da fatura
+const CARTAO_MELHOR_DIA = 5;  // compras a partir deste dia caem na fatura do mês seguinte
 
 const TIPOS = ['Saída','Entrada','Investimento','Retirada'];
 const FORMAS = ['Débito','Cartão','Conta','Dinheiro'];
@@ -519,7 +522,12 @@ function calcular(){
   let menor = null;
   for (const r of futuros) if (!menor || r.saldo < menor.saldo) menor = r;
   const proxSal = ord.find(r => r.desc === 'Salário' && r.data > hoje);
-  return { ord, saldoHoje, dinheiro, investido, patrimonio: saldoHoje + investido + dinheiro, menor, proxSal };
+  // saldo real: só o que está marcado como Pago (o que de fato já saiu/entrou na conta)
+  const saldoReal = validos.filter(r => r.status === 'Pago' && r.forma !== 'Dinheiro').reduce((s,r) => s + sinal(r.tipo)*r.valor, 0);
+  // projetado para o fim do mês: inclui programados e previsões até o último dia do mês
+  const fimMes = ultimoDiaMes(ym(hoje)), ateFim = ord.filter(r => r.data <= fimMes);
+  const saldoFimMes = ateFim.length ? ateFim[ateFim.length - 1].saldo : null;
+  return { ord, saldoHoje, saldoReal, saldoFimMes, fimMes, dinheiro, investido, patrimonio: saldoReal + investido + dinheiro, menor, proxSal };
 }
 function resumoMes(mes){
   const rs = S.rows.filter(r => r.data && ym(r.data) === mes);
@@ -537,6 +545,13 @@ function resumoMes(mes){
 function mesesComDados(){ return [...new Set(S.rows.filter(r=>r.data).map(r => ym(r.data)))].sort(); }
 function nomeMes(m){ const [y,mm] = m.split('-').map(Number); return `${MESES_LONGO[mm-1]} ${y}`; }
 function addMes(m, n){ const [y,mm] = m.split('-').map(Number); const d = new Date(y, mm-1+n, 1); return `${d.getFullYear()}-${pad(d.getMonth()+1)}`; }
+/* fatura do cartão e previsões: o usuário escolhe só o mês, o app grava uma data padrão */
+const ultimoDiaMes = m => { const [y, mm] = m.split('-').map(Number); return isoLocal(new Date(y, mm, 0)); };
+const ehUltimoDia = iso => !!iso && iso === ultimoDiaMes(ym(iso));
+const dataFatura = m => `${m}-${pad(CARTAO_VENCIMENTO)}`;
+const faturaSugerida = (iso = today()) => +iso.slice(8, 10) >= CARTAO_MELHOR_DIA ? addMes(ym(iso), 1) : ym(iso);
+const ehCartao = r => r.forma === 'Cartão' && normTipo(r.tipo) === 'Saída';
+const mesCurto = iso => `${MESES[+iso.slice(5, 7) - 1].toLowerCase()}${iso.slice(0, 4) !== String(new Date().getFullYear()) ? '/' + iso.slice(2, 4) : ''}`;
 
 /* ---------------- renderização ---------------- */
 function destroyCharts(){ Object.values(charts).forEach(c => c.destroy()); charts = {}; }
@@ -570,6 +585,13 @@ function render(){
 }
 function irPara(t){ S.tab = t; lsSet('cf_tab', t); render(); scrollTo(0,0); }
 
+/* "Fatura dez" para cartão, "Previsto p/ dez" para previsões; senão a data (omitida quando a lista já agrupa por dia) */
+function quando(r, semData){
+  if (!r.data) return '';
+  if (ehCartao(r)) return `Fatura ${mesCurto(r.data)} · `;
+  if (r.status === 'Previsão') return `Previsto p/ ${mesCurto(r.data)} · `;
+  return semData ? '' : fmtData(r.data) + ' · ';
+}
 function itemHTML(r, opts={}){
   const t = normTipo(r.tipo), s = sinal(r.tipo);
   const cls = t === 'Investimento' ? 'muted' : (s > 0 ? 'pos' : '');
@@ -578,7 +600,7 @@ function itemHTML(r, opts={}){
   return `<li class="item" ${opts.noclick ? 'style="cursor:default"' : `onclick="abrirForm(${r.row})"`}>
     ${avatar(r.cat)}
     <div class="main"><div class="d"><span class="tx">${esc(r.desc)}</span>${r.rec === 'Recorrente' ? `<span class="muted" title="Todo mês">${ic('repeat',13,2.2)}</span>` : ''}</div>
-    <div class="s">${badge}${opts.semData ? '' : fmtData(r.data) + ' · '}${esc(r.cat)} · ${esc(r.forma)}${r.obs ? ' · ' + esc(r.obs) : ''}</div></div>
+    <div class="s">${badge}${quando(r, opts.semData)}${esc(r.cat)} · ${esc(r.forma)}${r.obs ? ' · ' + esc(r.obs) : ''}</div></div>
     <div class="val ${cls}">${s > 0 ? '+' : '−'}${fmtBRL(r.valor)}${opts.saldo && r.saldo != null ? `<small>saldo ${fmtBRL(r.saldo)}</small>` : ''}</div>
     ${opts.pagar && r.status !== 'Pago' && !r.pendente ? `<button class="paybtn" title="Marcar como pago" aria-label="Marcar ${esc(r.desc)} como pago" onclick="event.stopPropagation();marcarPago(${r.row})">${ic('check',17,2.4)}</button>` : ''}</li>`;
 }
@@ -607,8 +629,9 @@ const telas = {
       <div class="small muted" style="margin-top:10px">Categorias com 90% ou mais do limite, incluindo o que está programado no mês.</div></div>` : '';
     return `<div class="dash"><div class="col-a">
     <section class="hero">
-      <div class="l">Saldo em conta hoje</div>
-      <div class="v">${fmtBRL(c.saldoHoje)}</div>
+      <div class="l">Saldo real em conta</div>
+      <div class="v">${fmtBRL(c.saldoReal)}</div>
+      ${c.saldoFimMes != null ? `<div class="proj">Projetado para ${fmtData(c.fimMes)}: <b>${fmtBRL(c.saldoFimMes)}</b></div>` : ''}
       ${pill}
       <div class="grid">
         <div><span>Investido</span><b>${fmtBRL(c.investido)}</b></div>
@@ -776,12 +799,13 @@ function abrirForm(rowNum, prefill){
     <div class="valorbox"><span>R$</span><input class="i valor" id="fValor" inputmode="decimal" placeholder="0,00" aria-label="Valor" value="${l.valor!=='' ? String(l.valor).replace('.',',') : ''}"></div>
     <label class="f"><span>Descrição</span><input class="i" id="fDesc" list="dlDesc" autocomplete="off" value="${esc(l.desc)}"><datalist id="dlDesc">${descs.map(d=>`<option value="${esc(d)}">`).join('')}</datalist></label>
     <div class="row">
-      <label class="f"><span>Data</span><input class="i" type="date" id="fData" value="${l.data}"></label>
-      <label class="f"><span>Status</span><select class="i" id="fStatus">${opt(STATUS.includes(l.status)?STATUS:[...STATUS,l.status], l.status)}</select></label>
-    </div>
-    <div class="row">
       <label class="f"><span>Categoria</span><select class="i" id="fCat"><option value="">Escolha…</option>${opt(CATEGORIAS.includes(l.cat)||!l.cat?CATEGORIAS:[...CATEGORIAS,l.cat], l.cat)}</select></label>
       <label class="f"><span>Forma</span><select class="i" id="fForma">${opt(FORMAS, l.forma)}</select></label>
+    </div>
+    <div class="row">
+      <label class="f" id="boxData"><span>Data</span><input class="i" type="date" id="fData" value="${l.data}"></label>
+      <label class="f" id="boxMes" style="display:none"><span id="lblMes">Mês</span><select class="i" id="fMes">${opcoesMes(l.data)}</select></label>
+      <label class="f"><span>Status</span><select class="i" id="fStatus">${opt(STATUS.includes(l.status)?STATUS:[...STATUS,l.status], l.status)}</select></label>
     </div>
     <label class="f"><span>Observação (opcional)</span><input class="i" id="fObs" value="${esc(l.obs)}"></label>
     <span class="lbl">Esse lançamento é</span>
@@ -799,12 +823,19 @@ function abrirForm(rowNum, prefill){
     ${ed ? `<div class="small muted" style="margin-top:8px">Linha ${ed.row} da aba ${esc(S.sheetName)}</div>` : ''}
   </div>`;
   document.body.appendChild(bg);
+  S._edData = ed ? ed.data : null;
+  S._modoData = null;
   bg.querySelectorAll('#segTipo button').forEach(b => b.onclick = () => {
     bg.querySelectorAll('#segTipo button').forEach(x => x.classList.remove('on')); b.classList.add('on');
     const t = b.dataset.v;
     if (t === 'Entrada' && !$('#fCat').value) { $('#fCat').value = 'Renda'; $('#fForma').value = 'Conta'; }
     if ((t === 'Investimento' || t === 'Retirada') && !$('#fCat').value) { $('#fCat').value = 'Investimento'; $('#fForma').value = 'Conta'; }
+    atualizarModoData();
   });
+  $('#fForma').addEventListener('change', () => atualizarModoData());
+  $('#fStatus').addEventListener('change', () => atualizarModoData());
+  $('#fMes').addEventListener('change', () => { if (!ed && modoData() === 'fatura') $('#fStatus').value = dataFatura($('#fMes').value) > today() ? 'Programado' : 'Pago'; if (recAtual() === 'Parcelada') S._parcInfo?.(); });
+  atualizarModoData(true);
   $('#fDesc').addEventListener('change', e => {
     const ult = [...S.rows].reverse().find(r => r.desc.toLowerCase() === e.target.value.trim().toLowerCase());
     if (!ult) return;
@@ -828,6 +859,45 @@ function abrirForm(rowNum, prefill){
   } else S._parcInfo = null;
   if (!ed) setTimeout(() => $('#fValor')?.focus(), 50);
 }
+/* Data do lançamento: dia exato, mês da fatura (cartão) ou só o mês (previsão) */
+function opcoesMes(sel){
+  const base = ym(today()), meses = [];
+  for (let k = -3; k <= 14; k++) meses.push(addMes(base, k));
+  if (sel && !meses.includes(ym(sel))) meses.push(ym(sel));
+  return meses.sort().map(m => `<option value="${m}" ${sel && ym(sel) === m ? 'selected' : ''}>${MESES[+m.slice(5) - 1]} ${m.slice(0, 4)}</option>`).join('');
+}
+function modoData(){
+  const tipo = document.querySelector('#segTipo button.on')?.dataset.v;
+  if ($('#fForma')?.value === 'Cartão' && tipo === 'Saída') return 'fatura';
+  if ($('#fStatus')?.value === 'Previsão') return 'mes';
+  return 'dia';
+}
+function atualizarModoData(inicio){
+  const modo = modoData(), antes = S._modoData; S._modoData = modo;
+  $('#boxData').style.display = modo === 'dia' ? '' : 'none';
+  $('#boxMes').style.display = modo === 'dia' ? 'none' : '';
+  $('#lblMes').textContent = modo === 'fatura' ? 'Fatura de' : 'Mês da previsão';
+  if (modo === antes) return;
+  const novo = !S._edData;
+  if (modo === 'fatura'){
+    // novo lançamento: sugere a fatura pela regra do melhor dia; editando: mantém o mês do lançamento
+    $('#fMes').value = novo ? faturaSugerida($('#fData').value || today()) : ym(S._edData);
+    if (novo && $('#fStatus').value !== 'Previsão') $('#fStatus').value = dataFatura($('#fMes').value) > today() ? 'Programado' : 'Pago';
+  } else if (modo === 'mes' && !inicio){
+    $('#fMes').value = ym($('#fData').value || today());
+  } else if (modo === 'dia' && antes === 'mes' && !inicio && $('#fMes').value){
+    // saindo de "previsão": parte do mês que estava escolhido (o mês da fatura não é a data da compra, então nesse caso a data fica como estava)
+    const m = $('#fMes').value; if (ym($('#fData').value) !== m) $('#fData').value = m === ym(today()) ? today() : `${m}-01`;
+  }
+  if (recAtual() === 'Parcelada') S._parcInfo?.();
+}
+function dataEscolhida(){
+  const modo = modoData();
+  if (modo === 'dia') return $('#fData').value;
+  const m = $('#fMes').value;
+  if (S._edData && ym(S._edData) === m) return S._edData; // editando sem trocar o mês: mantém a data original
+  return modo === 'fatura' ? dataFatura(m) : ultimoDiaMes(m);
+}
 const recAtual = () => document.querySelector('#segRec button.on')?.dataset.v || '';
 function setRec(v){
   document.querySelectorAll('#segRec button').forEach(x => x.classList.toggle('on', x.dataset.v === v));
@@ -838,7 +908,7 @@ function lerForm(){
   return {
     rec: recAtual(),
     tipo: document.querySelector('#segTipo button.on').dataset.v,
-    valor: parseValor($('#fValor').value), desc: $('#fDesc').value.trim(), data: $('#fData').value,
+    valor: parseValor($('#fValor').value), desc: $('#fDesc').value.trim(), data: dataEscolhida(),
     cat: $('#fCat').value, forma: $('#fForma').value, status: $('#fStatus').value, obs: $('#fObs').value.trim()
   };
 }
@@ -847,7 +917,7 @@ function gerarParcelas(l, n, modo){
   const total = Math.round(l.valor * 100) * (modo === 'total' ? 1 : n);
   const base = Math.floor(total / n), resto = total - base * n;
   return Array.from({ length: n }, (_, i) => ({
-    ...l, desc: `${l.desc} ${i+1}/${n}`, data: addMesesData(l.data, i),
+    ...l, desc: `${l.desc} ${i+1}/${n}`, data: ehUltimoDia(l.data) ? ultimoDiaMes(addMes(ym(l.data), i)) : addMesesData(l.data, i),
     valor: (base + (i === n - 1 ? resto : 0)) / 100,
     status: i === 0 ? l.status : 'Programado'
   }));
@@ -929,7 +999,8 @@ function abrirProgramar(orig){
       if (!nota && noDestino.has(desc.trim().toLowerCase())) nota = `já existe em ${MESES[+dest.slice(5)-1]}`;
       // marcação explícita (coluna Recorrência) manda; sem marcação, deduz pelo histórico
       const recorrente = !!p || r.rec === 'Recorrente' || (!r.rec && (meses[baseDesc(r.desc).toLowerCase()]?.size || 0) >= 2);
-      return { r, desc, parc: !!p, data: addMesesData(r.data, 1), nota, marcado: !nota && recorrente };
+      const data = r.status === 'Previsão' && ehUltimoDia(r.data) ? ultimoDiaMes(addMes(ym(r.data), 1)) : addMesesData(r.data, 1);
+      return { r, desc, parc: !!p, data, nota, marcado: !nota && recorrente };
     });
   S._prog = itens;
   abrirSheet(`<h3>Programar ${nomeMes(dest)}${fechar}</h3>

@@ -986,7 +986,7 @@ async function entrar(){ await msalApp.loginRedirect({ scopes: SCOPES }); }
 
 /* ---------------- início ---------------- */
 (async function main(){
-  if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});
+  if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(r => r.update()).catch(() => {});
   if (lsGet('cf_demo')){
     S.mode = 'demo'; S.rows = dadosDemo(); S.limites = { 'Lazer': 300, 'Alimentação': 1200 }; S.limitesOk = true; render(); return;
   }

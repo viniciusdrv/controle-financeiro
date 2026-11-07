@@ -1,6 +1,6 @@
 // Permite abrir o app sem internet. O próprio app (index.html) é buscado na rede primeiro,
 // para as atualizações chegarem logo; sem conexão, usa a cópia guardada.
-const CACHE = 'cf-v1';
+const CACHE = 'cf-v2';
 const CDN = [
   'https://cdn.jsdelivr.net/npm/@azure/msal-browser@3.27.0/lib/msal-browser.min.js',
   'https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js'
@@ -17,8 +17,9 @@ self.addEventListener('fetch', e => {
   if (e.request.method !== 'GET') return;
   const url = new URL(e.request.url);
   if (url.origin === location.origin){
+    // 'no-cache' faz o navegador sempre conferir no servidor se há versão nova do app
     e.respondWith(
-      fetch(e.request).then(r => {
+      fetch(url.href, { cache: 'no-cache', credentials: 'same-origin' }).then(r => {
         if (r.ok){ const copia = r.clone(); caches.open(CACHE).then(c => c.put(url.pathname.endsWith('/') ? './' : e.request, copia)); }
         return r;
       }).catch(() => caches.match(e.request, { ignoreSearch: true }).then(r => r || caches.match('./')))

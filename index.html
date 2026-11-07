@@ -214,7 +214,8 @@ async function carregarGraph(){
   const vals = res.values;
   const head = vals[0].map(h => String(h).trim());
   const ix = n => head.indexOf(n);
-  const c = { data:ix('Data'), desc:ix('Descrição'), cat:ix('Categoria'), tipo:ix('Tipo'), forma:ix('Forma'), status:ix('Status'), valor:ix('Valor'), obs:ix('Obs') };
+  const c = { data:ix('Data'), desc:ix('Descrição'), cat:ix('Categoria'), tipo:ix('Tipo'), forma:ix('Forma'), status:ix('Status'), valor:ix('Valor'), obs:ix('Obs'), rec:ix('Recorrência') };
+  S.colRec = c.rec >= 0 ? String.fromCharCode(65 + c.rec) : null; // letra da coluna "Recorrência" (K)
   if (c.data !== 0 || c.valor !== 6 || c.obs !== 8) throw new Error('A estrutura da Tabela1 mudou (colunas esperadas: Data…Valor em A–G, Obs em I).');
   const rows = [], empty = [];
   for (let i = 1; i < vals.length; i++){
@@ -225,7 +226,8 @@ async function carregarGraph(){
       row: rowNum,
       data: typeof v[c.data] === 'number' ? serialToIso(v[c.data]) : '',
       desc: String(v[c.desc]), cat: String(v[c.cat]), tipo: String(v[c.tipo]), forma: String(v[c.forma]),
-      status: String(v[c.status]), valor: Number(v[c.valor]) || 0, obs: String(v[c.obs] ?? '')
+      status: String(v[c.status]), valor: Number(v[c.valor]) || 0, obs: String(v[c.obs] ?? ''),
+      rec: c.rec >= 0 ? String(v[c.rec] ?? '') : ''
     });
   }
   S.rows = rows; S.emptyRows = empty;
@@ -245,6 +247,7 @@ async function gravarVarias(lista){
     const parte = lista.slice(i, j + 1), ini = alvo[i], fim = alvo[j];
     await graph('PATCH', `${base}/range(address='A${ini}:G${fim}')`, { values: parte.map(l => linhaParaValores(l)[0]) });
     if (parte.some(l => l.obs)) await graph('PATCH', `${base}/range(address='I${ini}:I${fim}')`, { values: parte.map(l => [l.obs || '']) });
+    if (S.colRec && parte.some(l => l.rec)) await graph('PATCH', `${base}/range(address='${S.colRec}${ini}:${S.colRec}${fim}')`, { values: parte.map(l => [l.rec || '']) });
     i = j + 1;
   }
   await carregarGraph();
@@ -311,11 +314,13 @@ async function gravarLinha(rowNum, l){
   const base = `${await wb()}/worksheets('${encodeURIComponent(S.sheetName)}')`;
   await graph('PATCH', `${base}/range(address='A${rowNum}:G${rowNum}')`, { values: linhaParaValores(l) });
   await graph('PATCH', `${base}/range(address='I${rowNum}')`, { values: [[ l.obs || '' ]] });
+  if (S.colRec) await graph('PATCH', `${base}/range(address='${S.colRec}${rowNum}')`, { values: [[ l.rec || '' ]] });
 }
 async function limparLinha(rowNum){
   const base = `${await wb()}/worksheets('${encodeURIComponent(S.sheetName)}')`;
   await graph('PATCH', `${base}/range(address='A${rowNum}:G${rowNum}')`, { values: [['','','','','','','']] });
   await graph('PATCH', `${base}/range(address='I${rowNum}')`, { values: [['']] });
+  if (S.colRec) await graph('PATCH', `${base}/range(address='${S.colRec}${rowNum}')`, { values: [['']] });
 }
 
 /* ---------------- modo demonstração (dados fictícios) ---------------- */
@@ -400,7 +405,7 @@ function itemHTML(r, opts={}){
   const cls = t === 'Investimento' ? 'muted' : (s > 0 ? 'pos' : '');
   return `<li class="item" ${opts.noclick ? 'style="cursor:default"' : `onclick="abrirForm(${r.row})"`}>
     <div class="main"><div class="d">${esc(r.desc)}${r.pendente ? '<span class="badge Previsão">⏳ envio</span>' : (r.status !== 'Pago' ? `<span class="badge ${esc(r.status)}">${esc(r.status)}</span>` : '')}</div>
-    <div class="s">${fmtData(r.data)} · ${esc(r.cat)} · ${esc(r.forma)}${r.obs ? ' · ' + esc(r.obs) : ''}</div></div>
+    <div class="s">${fmtData(r.data)} · ${esc(r.cat)} · ${esc(r.forma)}${r.rec === 'Recorrente' ? ' · 🔁' : ''}${r.obs ? ' · ' + esc(r.obs) : ''}</div></div>
     <div style="text-align:right"><div class="val ${cls}">${s > 0 ? '+' : '−'} ${fmtBRL(r.valor)}</div>
     ${opts.saldo && r.saldo != null ? `<div class="s">saldo ${fmtBRL(r.saldo)}</div>` : ''}
     ${opts.pagar && r.status !== 'Pago' && !r.pendente ? `<button class="btn sm" style="margin-top:4px" onclick="event.stopPropagation();marcarPago(${r.row})">✓ Pago</button>` : ''}</div></li>`;
@@ -556,7 +561,8 @@ const posRender = {
 function abrirForm(rowNum, prefill){
   if (rowNum < 0) return toast('Este lançamento está guardado no aparelho e vai para a planilha quando houver internet.', 4000);
   const ed = rowNum ? S.rows.find(r => r.row === rowNum) : null;
-  const l = ed ? { ...ed, tipo: normTipo(ed.tipo) } : { data: today(), desc:'', cat:'', tipo:'Saída', forma:'Débito', status:'Pago', valor:'', obs:'', ...(prefill || {}) };
+  const l = ed ? { ...ed, tipo: normTipo(ed.tipo) } : { data: today(), desc:'', cat:'', tipo:'Saída', forma:'Débito', status:'Pago', valor:'', obs:'', rec:'Única', ...(prefill || {}) };
+  const recOpc = ed ? ['Única','Recorrente', ...(ed.rec === 'Parcelada' ? ['Parcelada'] : [])] : ['Única','Recorrente','Parcelada'];
   const descs = [...new Set(S.rows.map(r => r.desc).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'pt-BR'));
   const opt = (arr, sel) => arr.map(v => `<option ${v===sel?'selected':''}>${esc(v)}</option>`).join('');
   const bg = document.createElement('div'); bg.className = 'sheet-bg'; bg.id = 'sheet';
@@ -575,8 +581,9 @@ function abrirForm(rowNum, prefill){
       <label class="f"><span>Forma</span><select class="i" id="fForma">${opt(FORMAS, l.forma)}</select></label>
     </div>
     <label class="f"><span>Observação (opcional)</span><input class="i" id="fObs" value="${esc(l.obs)}"></label>
-    ${ed ? '' : `<label class="chk"><input type="checkbox" id="fParc"> Compra parcelada</label>
-    <div id="parcBox" style="display:none"><div class="row">
+    <span class="small muted" style="display:block;margin-bottom:4px">Esse lançamento é</span>
+    <div class="seg" id="segRec">${recOpc.map(v => `<button type="button" class="${v === l.rec ? 'on' : ''}" data-v="${v}">${{'Única':'Única vez','Recorrente':'🔁 Todo mês','Parcelada':'Parcelado'}[v]}</button>`).join('')}</div>
+    ${ed ? '' : `<div id="parcBox" style="display:none"><div class="row">
       <label class="f"><span>Nº de parcelas</span><input class="i" id="fNParc" type="number" min="2" max="60" value="2" inputmode="numeric"></label>
       <label class="f"><span>O valor digitado é</span><select class="i" id="fParcModo"><option value="parcela">de cada parcela</option><option value="total">o total da compra</option></select></label>
     </div><div id="parcInfo" class="small muted" style="margin:-4px 0 10px"></div></div>`}
@@ -600,22 +607,30 @@ function abrirForm(rowNum, prefill){
     if (!ed){
       $('#fCat').value = ult.cat; $('#fForma').value = ult.forma;
       bg.querySelectorAll('#segTipo button').forEach(x => x.classList.toggle('on', x.dataset.v === normTipo(ult.tipo)));
+      if (ult.rec === 'Recorrente' || ult.rec === 'Única') setRec(ult.rec);
       if (!$('#fValor').value) $('#fValor').value = String(ult.valor).replace('.',',');
     }
   });
   $('#fData').addEventListener('change', e => { if (!ed) $('#fStatus').value = e.target.value > today() ? 'Programado' : 'Pago'; });
+  bg.querySelectorAll('#segRec button').forEach(b => b.onclick = () => setRec(b.dataset.v));
   if (!ed){
     const info = () => {
       const lst = gerarParcelas(lerForm(), parseInt($('#fNParc').value, 10), $('#fParcModo').value);
       $('#parcInfo').textContent = lst ? `${lst.length}× de ${fmtBRL(lst[0].valor)} (total ${fmtBRL(lst.reduce((s,x)=>s+x.valor,0))}), de ${fmtDataLonga(lst[0].data)} a ${fmtDataLonga(lst[lst.length-1].data)}. A descrição recebe "1/${lst.length}", "2/${lst.length}"…` : 'Informe valor, data e de 2 a 60 parcelas.';
     };
-    $('#fParc').addEventListener('change', e => { $('#parcBox').style.display = e.target.checked ? '' : 'none'; info(); });
-    ['#fNParc','#fParcModo','#fValor','#fData'].forEach(s => $(s).addEventListener('input', () => { if ($('#fParc').checked) info(); }));
+    S._parcInfo = info;
+    ['#fNParc','#fParcModo','#fValor','#fData'].forEach(s => $(s).addEventListener('input', () => { if (recAtual() === 'Parcelada') info(); }));
     setTimeout(() => $('#fValor').focus(), 50);
   }
 }
+const recAtual = () => document.querySelector('#segRec button.on')?.dataset.v || '';
+function setRec(v){
+  document.querySelectorAll('#segRec button').forEach(x => x.classList.toggle('on', x.dataset.v === v));
+  const box = $('#parcBox'); if (box){ box.style.display = v === 'Parcelada' ? '' : 'none'; if (v === 'Parcelada') S._parcInfo?.(); }
+}
 function lerForm(){
   return {
+    rec: recAtual(),
     tipo: document.querySelector('#segTipo button.on').dataset.v,
     valor: parseValor($('#fValor').value), desc: $('#fDesc').value.trim(), data: $('#fData').value,
     cat: $('#fCat').value, forma: $('#fForma').value, status: $('#fStatus').value, obs: $('#fObs').value.trim()
@@ -634,7 +649,7 @@ function gerarParcelas(l, n, modo){
 function duplicar(rowNum){
   const r = S.rows.find(x => x.row === rowNum); if (!r) return;
   $('#sheet')?.remove();
-  abrirForm(0, { desc: r.desc, cat: r.cat, tipo: normTipo(r.tipo), forma: r.forma, valor: r.valor, obs: r.obs, status: 'Pago' });
+  abrirForm(0, { desc: baseDesc(r.desc), cat: r.cat, tipo: normTipo(r.tipo), forma: r.forma, valor: r.valor, obs: r.obs, status: 'Pago', rec: r.rec === 'Recorrente' ? 'Recorrente' : 'Única' });
 }
 async function salvar(rowNum){
   const l = lerForm();
@@ -643,7 +658,7 @@ async function salvar(rowNum){
   if (!l.data) return toast('Informe a data');
   if (!l.cat) return toast('Escolha a categoria');
   let lista = [l];
-  if (!rowNum && $('#fParc')?.checked){
+  if (!rowNum && l.rec === 'Parcelada'){
     lista = gerarParcelas(l, parseInt($('#fNParc').value, 10), $('#fParcModo').value);
     if (!lista) return toast('Informe de 2 a 60 parcelas');
   }
@@ -701,8 +716,9 @@ function abrirProgramar(orig){
       let desc = r.desc, nota = '';
       if (p){ const a = +p[2], n = +p[3]; if (a >= n) nota = 'última parcela'; else desc = `${p[1]} ${a+1}/${n}`; }
       if (!nota && noDestino.has(desc.trim().toLowerCase())) nota = `já existe em ${MESES[+dest.slice(5)-1]}`;
-      const recorrente = (meses[baseDesc(r.desc).toLowerCase()]?.size || 0) >= 2 || !!p;
-      return { r, desc, data: addMesesData(r.data, 1), nota, marcado: !nota && recorrente };
+      // marcação explícita (coluna Recorrência) manda; sem marcação, deduz pelo histórico
+      const recorrente = !!p || r.rec === 'Recorrente' || (!r.rec && (meses[baseDesc(r.desc).toLowerCase()]?.size || 0) >= 2);
+      return { r, desc, parc: !!p, data: addMesesData(r.data, 1), nota, marcado: !nota && recorrente };
     });
   S._prog = itens;
   abrirSheet(`<h3>Programar ${nomeMes(dest)}${fechar}</h3>
@@ -710,7 +726,7 @@ function abrirProgramar(orig){
     ${itens.length ? `<div class="row" style="margin-bottom:6px"><button class="btn sec sm" onclick="document.querySelectorAll('.progchk:not(:disabled)').forEach(c=>c.checked=true);contarProg()">Marcar todos</button><button class="btn sec sm" onclick="document.querySelectorAll('.progchk').forEach(c=>c.checked=false);contarProg()">Desmarcar todos</button></div>
     <ul class="list card" style="padding:4px 12px">${itens.map((x, i) => `<li class="item ${x.nota ? 'off' : ''}" style="cursor:default">
       <input type="checkbox" class="progchk" data-i="${i}" ${x.marcado ? 'checked' : ''} ${x.nota ? 'disabled' : ''} onchange="contarProg()">
-      <div class="main"><div class="d">${esc(x.desc)}</div><div class="s">${fmtData(x.data)} · ${esc(x.r.cat)} · ${esc(x.r.forma)}${x.nota ? ` · <b>${x.nota}</b>` : ''}</div></div>
+      <div class="main"><div class="d">${esc(x.desc)}</div><div class="s">${fmtData(x.data)} · ${esc(x.r.cat)} · ${esc(x.r.forma)}${x.r.rec === 'Única' && !x.parc ? ' · única vez' : ''}${x.nota ? ` · <b>${x.nota}</b>` : ''}</div></div>
       <input class="i mini" id="progv${i}" inputmode="decimal" value="${String(x.r.valor).replace('.', ',')}" ${x.nota ? 'disabled' : ''}></li>`).join('')}</ul>
     <button class="btn" id="progBtn" style="width:100%" onclick="salvarProgramacao()"></button>` : '<div class="muted">Nenhum lançamento neste mês para copiar.</div>'}`);
   contarProg();
@@ -721,7 +737,7 @@ async function salvarProgramacao(){
   for (const c of document.querySelectorAll('.progchk:checked')){
     const x = S._prog[+c.dataset.i], v = parseValor($('#progv' + c.dataset.i).value);
     if (!(v > 0)) return toast(`Valor inválido em "${x.desc}"`);
-    lista.push({ data: x.data, desc: x.desc, cat: x.r.cat, tipo: normTipo(x.r.tipo), forma: x.r.forma, status: x.r.status === 'Previsão' ? 'Previsão' : 'Programado', valor: v, obs: x.r.obs || '' });
+    lista.push({ data: x.data, desc: x.desc, cat: x.r.cat, tipo: normTipo(x.r.tipo), forma: x.r.forma, status: x.r.status === 'Previsão' ? 'Previsão' : 'Programado', valor: v, obs: x.r.obs || '', rec: x.parc ? 'Parcelada' : 'Recorrente' });
   }
   const b = $('#progBtn'); b.disabled = true; b.textContent = 'Gravando…';
   try {

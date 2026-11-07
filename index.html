@@ -108,6 +108,8 @@ header.top h1 small{display:block;font-size:12px;font-weight:500;color:var(--mut
 .badge.Programado{background:var(--brand-soft);color:var(--brand)} .badge.Previsão{background:var(--warn-soft);color:var(--warn)}
 .paybtn{border:1px solid var(--line);background:var(--card);color:var(--pos);border-radius:50%;width:34px;height:34px;padding:0;display:grid;place-items:center;cursor:pointer;flex:0 0 auto}
 .item .s .badge{margin-right:6px;vertical-align:1px}
+.regbtn{border:0;background:var(--brand-soft);color:var(--brand);border-radius:11px;height:34px;padding:0 12px;font-size:13px;font-weight:650;cursor:pointer;flex:0 0 auto}
+.regbtn:hover{filter:brightness(.97)}
 .paybtn:hover{background:var(--pos-soft);border-color:transparent}
 .grouph{font-size:12.5px;font-weight:600;color:var(--muted);margin:16px 4px 6px;display:flex;justify-content:space-between}
 .grouph:first-child{margin-top:4px}
@@ -504,6 +506,8 @@ function dadosDemo(){
     base.forEach(r => { if (!r.status) r.status = st(r.data); });
   }
   base.push({data:d(1,18),desc:'Lazer',cat:'Lazer',tipo:'Saída',forma:'Débito',valor:300,status:'Previsão'});
+  base.push({data:ultimoDiaMes(ym(today())),desc:'Feira e açougue',cat:'Alimentação',tipo:'Saída',forma:'Débito',valor:600,status:'Previsão'});
+  base.push({data:ultimoDiaMes(ym(today())),desc:'Lazer do mês',cat:'Lazer',tipo:'Saída',forma:'Débito',valor:250,status:'Previsão'});
   return base.map((r,i) => ({ row:i+2, obs:'', ...r }));
 }
 
@@ -601,9 +605,12 @@ function itemHTML(r, opts={}){
   return `<li class="item" ${opts.noclick ? 'style="cursor:default"' : `onclick="abrirForm(${r.row})"`}>
     ${avatar(r.cat)}
     <div class="main"><div class="d"><span class="tx">${esc(r.desc)}</span>${r.rec === 'Recorrente' ? `<span class="muted" title="Todo mês">${ic('repeat',13,2.2)}</span>` : ''}</div>
-    <div class="s">${badge}${quando(r, opts.semData)}${esc(r.cat)} · ${esc(r.forma)}${r.obs ? ' · ' + esc(r.obs) : ''}</div></div>
-    <div class="val ${cls}">${s > 0 ? '+' : '−'}${fmtBRL(r.valor)}${opts.saldo && r.saldo != null ? `<small>saldo ${fmtBRL(r.saldo)}</small>` : ''}</div>
-    ${opts.pagar && r.status !== 'Pago' && !r.pendente ? `<button class="paybtn" title="Marcar como pago" aria-label="Marcar ${esc(r.desc)} como pago" onclick="event.stopPropagation();marcarPago(${r.row})">${ic('check',17,2.4)}</button>` : ''}</li>`;
+    ${opts.compacto
+      ? `<div class="s"><b style="color:var(--text);font-weight:650">${fmtBRL(r.valor)}</b> · ${ehCartao(r) ? 'fatura ' + mesCurto(r.data) : esc(r.forma)}</div></div>`
+      : `<div class="s">${badge}${quando(r, opts.semData)}${esc(r.cat)} · ${esc(r.forma)}${r.obs ? ' · ' + esc(r.obs) : ''}</div></div>
+    <div class="val ${cls}">${s > 0 ? '+' : '−'}${fmtBRL(r.valor)}${opts.saldo && r.saldo != null ? `<small>saldo ${fmtBRL(r.saldo)}</small>` : ''}</div>`}
+    ${opts.pagar && r.status === 'Previsão' && !r.pendente ? `<button class="regbtn" aria-label="Registrar gasto de ${esc(r.desc)}" onclick="event.stopPropagation();abrirRegistro(${r.row})">Registrar</button>`
+      : opts.pagar && r.status !== 'Pago' && !r.pendente ? `<button class="paybtn" title="Marcar como pago" aria-label="Marcar ${esc(r.desc)} como pago" onclick="event.stopPropagation();marcarPago(${r.row})">${ic('check',17,2.4)}</button>` : ''}</li>`;
 }
 
 const telas = {
@@ -617,7 +624,13 @@ const telas = {
       else pill = `<span class="pill"><i></i>Folga ok · menor saldo ${fmtBRL(m.saldo)} em ${fmtData(m.data)}</span>`;
     }
     const hoje = today(), lim = isoLocal(new Date(Date.now() + 21*864e5));
-    const proximos = c.ord.filter(r => r.status !== 'Pago' && r.status !== 'Marco zero' && r.data <= lim);
+    const proximos = c.ord.filter(r => r.status !== 'Pago' && r.status !== 'Marco zero' && r.status !== 'Previsão' && r.data <= lim);
+    // previsões do mês atual (e de meses anteriores que ficaram sem registro)
+    const prevs = c.ord.filter(r => r.status === 'Previsão' && r.data && ym(r.data) <= ym(hoje));
+    const totPrevMes = prevs.reduce((s, r) => s + r.valor, 0);
+    const prevCard = prevs.length ? `<div class="card"><div class="h2row"><h2>Previsões do mês</h2><span class="sub">${fmtBRL(totPrevMes)} a gastar</span></div>
+      <ul class="list">${prevs.map(r => itemHTML(r, { pagar: true, compacto: true })).join('')}</ul>
+      <div class="small muted" style="margin-top:8px">Toque em Registrar quando gastar: informe o valor real e, se foi só uma parte, o restante continua previsto.</div></div>` : '';
     const atrasados = proximos.filter(r => r.data < hoje);
     const dias = c.proxSal ? Math.round((new Date(c.proxSal.data+'T00:00') - new Date(hoje+'T00:00'))/864e5) : null;
     const previstos = {};
@@ -640,6 +653,7 @@ const telas = {
         <div><span>Próximo salário</span><b>${c.proxSal ? `${fmtData(c.proxSal.data)} · ${dias}d` : '—'}</b></div>
       </div>
     </section>
+    ${prevCard}
     ${limCard}
     <div class="card"><div class="h2row"><h2>Saldo projetado</h2><span class="sub">últimos 45 dias e futuro</span></div>
       <div class="legend"><span><i></i>Realizado</span><span><i class="d"></i>Projetado</span></div>
@@ -797,6 +811,7 @@ function abrirForm(rowNum, prefill){
   bg.onclick = e => { if (e.target === bg) bg.remove(); };
   bg.innerHTML = `<div class="sheet">
     <h3>${ed ? 'Editar lançamento' : 'Novo lançamento'}<button class="iconbtn plain" aria-label="Fechar" onclick="$('#sheet').remove()">${ic('x',20)}</button></h3>
+    ${ed && ed.status === 'Previsão' ? `<button class="btn block" style="margin-bottom:14px" onclick="abrirRegistro(${ed.row})">${ic('check', 18, 2.4)}Registrar pagamento desta previsão</button>` : ''}
     <div class="seg" id="segTipo">${TIPOS.map(t => `<button type="button" class="${t===l.tipo?'on':''}" data-v="${t}">${t}</button>`).join('')}</div>
     <div class="valorbox"><span>R$</span><input class="i valor" id="fValor" inputmode="decimal" placeholder="0,00" aria-label="Valor" value="${l.valor!=='' ? String(l.valor).replace('.',',') : ''}"></div>
     <label class="f"><span>Descrição</span><input class="i" id="fDesc" list="dlDesc" autocomplete="off" value="${esc(l.desc)}"><datalist id="dlDesc">${descs.map(d=>`<option value="${esc(d)}">`).join('')}</datalist></label>
@@ -1029,6 +1044,63 @@ async function salvarProgramacao(){
     $('#sheet')?.remove();
     S.mes = ym(lista[0].data); render();
     toast(guardado ? 'Sem internet: guardados no aparelho, serão enviados depois' : `${lista.length} lançamento(s) programado(s) ✓`, 3500);
+  } catch(e){ b.disabled = false; b.textContent = 'Tentar de novo'; toast('Erro: ' + e.message, 5000); }
+}
+
+/* Registrar gasto de uma previsão: valor real, total ou parcial */
+function abrirRegistro(rowNum){
+  const r = S.rows.find(x => x.row === rowNum); if (!r) return;
+  const cartao = ehCartao(r);
+  abrirSheet(`<h3>Registrar gasto${fechar}</h3>
+    <div class="item" style="cursor:default;padding-top:0;border-bottom:0">${avatar(r.cat)}<div class="main"><div class="d">${esc(r.desc)}</div>
+      <div class="s">Previsto ${fmtBRL(r.valor)} · ${quando(r).replace(/ · $/, '')}</div></div></div>
+    <span class="lbl" style="text-align:center">Quanto foi pago?</span>
+    <div class="valorbox" style="padding-top:2px"><span>R$</span><input class="i valor" id="rValor" inputmode="decimal" aria-label="Valor pago" value="${String(r.valor).replace('.', ',')}"></div>
+    <div class="row">
+      ${cartao ? `<label class="f"><span>Fatura de</span><select class="i" id="rMes">${opcoesMes(r.data)}</select></label>`
+               : `<label class="f"><span>Data do gasto</span><input class="i" type="date" id="rData" value="${today()}"></label>`}
+      <label class="f"><span>Forma</span><select class="i" id="rForma">${FORMAS.map(f => `<option ${f === r.forma ? 'selected' : ''}>${f}</option>`).join('')}</select></label>
+    </div>
+    <div id="rResto" style="display:none">
+      <span class="lbl" id="rRestoTxt"></span>
+      <div class="seg" id="segResto"><button type="button" class="on" data-v="manter">Manter o restante previsto</button><button type="button" data-v="encerrar">Encerrar previsão</button></div>
+    </div>
+    <button class="btn block" id="rBtn" onclick="salvarRegistro(${r.row})">${ic('check', 18, 2.4)}Registrar pagamento</button>`);
+  const atualizar = () => {
+    const v = parseValor($('#rValor').value), resto = Math.round((r.valor - v) * 100) / 100, mostra = v > 0 && resto > 0.004;
+    $('#rResto').style.display = mostra ? '' : 'none';
+    if (mostra) $('#rRestoTxt').textContent = `Sobram ${fmtBRL(resto)} da previsão. O que fazer com o restante?`;
+  };
+  $('#rValor').addEventListener('input', atualizar);
+  document.querySelectorAll('#segResto button').forEach(b => b.onclick = () => document.querySelectorAll('#segResto button').forEach(x => x.classList.toggle('on', x === b)));
+  setTimeout(() => { const i = $('#rValor'); if (i){ i.focus(); i.select(); } }, 80);
+}
+async function salvarRegistro(rowNum){
+  const r = S.rows.find(x => x.row === rowNum); if (!r) return;
+  const v = parseValor($('#rValor').value);
+  if (!(v > 0)) return toast('Informe o valor pago');
+  const forma = $('#rForma').value;
+  let data = $('#rData') ? $('#rData').value : dataFatura($('#rMes').value);
+  if (!data) return toast('Informe a data');
+  if (forma === 'Cartão' && $('#rData')) data = dataFatura(faturaSugerida(data)); // passou a ser no cartão: vai para a fatura
+  if (forma !== 'Cartão' && $('#rMes')) data = today();                          // deixou de ser no cartão: data de hoje
+  const resto = Math.round((r.valor - v) * 100) / 100;
+  const manter = resto > 0.004 && document.querySelector('#segResto button.on')?.dataset.v === 'manter';
+  const { row, saldo, pendente, ...base } = r;
+  const pago = { ...base, valor: v, data, forma, status: data > today() ? 'Programado' : 'Pago' };
+  const b = $('#rBtn'); b.disabled = true; b.textContent = 'Registrando…';
+  try {
+    let guardado = false;
+    if (manter){
+      // a previsão continua com o que sobrou; o gasto entra como um lançamento novo, de uma vez só
+      if (S.mode === 'graph') await gravarLinha(rowNum, { ...r, valor: resto }); else r.valor = resto;
+      guardado = await inserirNovos([{ ...pago, rec: 'Única', obs: '' }]);
+    } else {
+      if (S.mode === 'graph'){ await gravarLinha(rowNum, pago); await carregarGraph(); } else Object.assign(r, pago);
+    }
+    $('#sheet')?.remove(); render();
+    toast(guardado ? 'Sem internet: guardado no aparelho, será enviado depois'
+      : manter ? `Registrado ${fmtBRL(v)} · ainda previstos ${fmtBRL(resto)}` : `${r.desc}: ${fmtBRL(v)} registrado ✓`, 3500);
   } catch(e){ b.disabled = false; b.textContent = 'Tentar de novo'; toast('Erro: ' + e.message, 5000); }
 }
 

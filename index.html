@@ -152,6 +152,32 @@ input[type=checkbox]{width:20px;height:20px;accent-color:var(--brand);flex:0 0 a
 .tipochip{display:inline-flex;align-items:center;gap:8px;border:0;background:color-mix(in srgb,var(--accent) 14%,transparent);color:var(--accent);font-weight:700;font-size:14px;border-radius:99px;padding:6px 13px 6px 7px;cursor:pointer;margin-bottom:4px}
 .tipochip .ti{width:26px;height:26px;border-radius:50%;display:grid;place-items:center;background:color-mix(in srgb,var(--accent) 18%,transparent)}
 .tipochip small{font-weight:500;opacity:.8;font-size:12.5px}
+/* calendário (Lançamentos → Calendário) */
+.vistas{display:flex;margin-bottom:12px}
+.cal{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px}
+.cal .dw{text-align:center;font-size:11.5px;color:var(--muted);font-weight:600;padding-bottom:4px}
+.cal .d{min-height:54px;border-radius:12px;padding:6px 2px 4px;text-align:center;position:relative;cursor:pointer;border:1.5px solid transparent;background:transparent;color:var(--text);font:inherit;min-width:0}
+.cal .d:hover{background:var(--card2)}
+.cal .d.fora{opacity:.3;cursor:default;background:transparent}
+.cal .d .n{font-size:13.5px;font-weight:600;line-height:1}
+.cal .d.warn{background:var(--warn-soft)} .cal .d.bad{background:var(--neg-soft)}
+.cal .d.sel{background:var(--card2);border-color:var(--line)}
+.cal .d.hoje{border-color:var(--brand)}
+.cal .dots{display:flex;justify-content:center;align-items:center;gap:3px;margin-top:6px;min-height:7px}
+.cal .dot,.legenda .dot{width:7px;height:7px;border-radius:50%;background:var(--c);flex:0 0 auto}
+.dot.vaz{background:transparent;border:1.5px solid var(--c)} .dot.prev{background:transparent;border:1.5px dashed var(--c)}
+.cal .mais{font-size:10px;color:var(--muted);font-weight:650;line-height:1}
+.cal .mk{position:absolute;top:3px;right:3px;color:var(--muted)}
+.cal .tot{display:none;font-size:11px;color:var(--muted);margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.legenda{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:12px;color:var(--muted);margin-top:12px}
+.legenda span{display:flex;align-items:center;gap:6px}
+.legenda i.bg{width:12px;height:12px;border-radius:4px}
+.dia-head{display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-bottom:2px} .dia-head h2{margin:0}
+.calgrid{display:grid;gap:0}
+.dash.lista{display:flex;flex-direction:column} .dash.lista .esq{display:contents}
+.dash.lista .col-a{order:0} .dash.lista .col-c{order:1} .dash.lista .col-b{order:2} .dash.lista.modo-cal .col-c{order:3;margin-top:4px}
+@media (min-width:1024px){ .cal .d{min-height:80px} .cal .tot{display:block} }
+@media (min-width:1280px){ .calgrid{grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);gap:16px;align-items:start} }
 .card.sug{background:var(--tint);border-color:color-mix(in srgb,var(--accent) 25%,var(--line))}
 .card.sug h2{display:flex;align-items:center;gap:8px;color:var(--accent)}
 .card.sug .v{font-size:22px;font-weight:700;color:var(--accent);letter-spacing:-.01em}
@@ -226,8 +252,8 @@ table.t tr:last-child td{border-bottom:0}
   .wrap{max-width:1220px;padding:8px 36px 48px}
   .demo-banner{max-width:none;margin:16px 36px 0}
   .dash{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr);gap:20px;align-items:start}
-  .dash.lista{grid-template-columns:330px minmax(0,1fr)}
-  .dash.lista .col-a{position:sticky;top:96px}
+  .dash.lista{display:grid;grid-template-columns:330px minmax(0,1fr)}
+  .dash.lista .esq{display:block;position:sticky;top:96px}
   .dash.lista .chips{flex-wrap:wrap;overflow:visible}
   .dash.lista .monthnav{margin-top:0}
   .grouph:first-child{margin-top:0}
@@ -388,6 +414,8 @@ const S = {
   tab: lsGet('cf_tab') || 'home',
   mes: ym(today()),
   busca: '', filtroCat: '',
+  vista: lsGet('cf_vista') === 'cal' ? 'cal' : 'lista', // Lançamentos: lista ou calendário (lembrado por aparelho)
+  diaSel: null,                                           // dia tocado no calendário
   loading: false,
   limites: {}, limitesRow: {},   // aba "Limites": valor por categoria e linha de cada categoria
   offlineDesde: null,            // mostrando a cópia guardada no aparelho (sem internet)
@@ -787,16 +815,22 @@ const telas = {
     const mes = S.mes, rm = resumoMes(mes);
     const cats = [...new Set(S.rows.map(r => r.cat).filter(Boolean))].sort();
     const chip = (c, nome) => `<span class="chip ${S.filtroCat===c?'on':''}" onclick="S.filtroCat='${esc(c)}';render()">${esc(nome)}</span>`;
-    return `<div class="dash lista"><div class="col-a">
-    ${S.busca.trim() ? '' : `${navMes(mes)}
-    <div class="kpis" style="grid-template-columns:1fr 1fr">
+    const buscando = !!S.busca.trim(), cal = S.vista === 'cal' && !buscando; // buscar sempre mostra a lista (todos os meses)
+    // .esq agrupa a coluna da esquerda no PC; no celular, no modo calendário, os controles (col-c) vão para depois do calendário
+    return `<div class="dash lista ${cal ? 'modo-cal' : ''}"><div class="esq"><div class="col-a">
+    <div class="seg vistas" id="segVista">${[['lista','Lista'],['cal','Calendário']].map(([v, n]) => `<button type="button" data-v="${v}" class="${(cal ? 'cal' : 'lista') === v ? 'on' : ''}" onclick="setVista('${v}')">${n}</button>`).join('')}</div>
+    ${buscando ? '' : navMes(mes)}
+    </div><div class="col-c">
+    ${buscando ? '' : `<div class="kpis" style="grid-template-columns:1fr 1fr">
       <div class="kpi"><div class="l">Entradas</div><div class="v pos">${fmtBRL(rm.ent)}</div></div>
       <div class="kpi"><div class="l">Saídas</div><div class="v">${fmtBRL(rm.sai)}</div></div>
     </div>
     <button class="btn sec block" style="margin-bottom:12px" onclick="abrirProgramar(S.mes)">${ic('repeat',17)}Programar ${mesLongo(addMes(mes,1)).toLowerCase()}</button>`}
     <div class="searchbox">${ic('search',18)}<input class="i" id="busca" placeholder="Buscar em todos os meses" value="${esc(S.busca)}" oninput="aoBuscar(this)"></div>
     <div class="chips">${chip('', 'Todas')}${cats.map(c => chip(c, c)).join('')}</div>
-    </div><div class="col-b"><div id="listaCorpo">${listaCorpoHTML()}</div></div></div>`;
+    </div></div><div class="col-b">${cal
+      ? `<div class="calgrid"><div class="card" id="calBox">${calendarioHTML()}</div><div class="card" id="diaBox">${diaHTML()}</div></div>`
+      : `<div id="listaCorpo">${listaCorpoHTML()}</div>`}</div></div>`;
   },
   analise(){
     const mes = S.mes, r = resumoMes(mes), meses = mesesComDados();
@@ -836,6 +870,62 @@ function listaCorpoHTML(){
     return `<div class="grouph"><span>${dia}</span><span>${tot >= 0 ? '+' : '−'}${fmtBRL(Math.abs(tot))}</span></div><div class="card" style="padding:2px 14px;margin-bottom:6px"><ul class="list">${items.map(r => itemHTML(r, { saldo:true, semData:true })).join('')}</ul></div>`;
   }).join('');
 }
+/* ---- calendário do mês ---- */
+const COR_TIPO = { 'Saída':'var(--neg)', 'Entrada':'var(--pos)', 'Investimento':'#3b82f6', 'Retirada':'#d4a017' };
+function setVista(v){ S.vista = v; lsSet('cf_vista', v); if (v === 'cal') S.busca = ''; render(); }
+/* lançamentos do mês exibido (respeitando o filtro de categoria), agrupados por dia */
+function lancDoMes(){
+  const g = {};
+  S.rows.filter(r => r.data && ym(r.data) === S.mes && (!S.filtroCat || r.cat === S.filtroCat)).sort(porData).forEach(r => (g[r.data] = g[r.data] || []).push(r));
+  return g;
+}
+/* saldo projetado ao fim de cada dia do mês (último saldo da linha do tempo até aquele dia) */
+function saldosDoMes(dias){
+  const ord = S._calc.ord, res = {}; let i = 0, ult = null;
+  for (const d of dias){ while (i < ord.length && ord[i].data <= d) ult = ord[i++].saldo; res[d] = ult; }
+  return res;
+}
+const diasDoMes = m => Array.from({ length: +ultimoDiaMes(m).slice(8) }, (_, i) => `${m}-${pad(i + 1)}`);
+/* dia selecionado: o tocado; senão hoje (se for deste mês); senão o primeiro dia com lançamento */
+function diaAtual(g){
+  if (S.diaSel && ym(S.diaSel) === S.mes) return S.diaSel;
+  if (ym(today()) === S.mes) return today();
+  return Object.keys(g)[0] || `${S.mes}-01`;
+}
+function calendarioHTML(){
+  const g = lancDoMes(), dias = diasDoMes(S.mes), saldos = saldosDoMes(dias), sel = diaAtual(g), hoje = today();
+  const vazios = new Date(S.mes + '-01T12:00').getDay(); // 0 = domingo
+  const salarios = new Set(S.rows.filter(r => r.desc === 'Salário' && r.data && ym(r.data) === S.mes).map(r => r.data));
+  const celula = d => {
+    const itens = g[d] || [], s = saldos[d], dia = +d.slice(8);
+    const cls = ['d', d === hoje ? 'hoje' : '', d === sel ? 'sel' : '', s != null && s < 0 ? 'bad' : s != null && s < RESERVA_MINIMA ? 'warn' : ''].join(' ');
+    const dots = itens.slice(0, 3).map(r => `<span class="dot ${r.status === 'Previsão' ? 'prev' : r.status === 'Pago' ? '' : 'vaz'}" style="--c:${COR_TIPO[r.tipo] || 'var(--muted)'}"></span>`).join('')
+      + (itens.length > 3 ? `<span class="mais">+${itens.length - 3}</span>` : '');
+    const tot = itens.reduce((a, r) => a + sinal(r.tipo) * r.valor, 0);
+    const mk = salarios.has(d) ? ic('wallet', 12, 2.2) : dia === CARTAO_VENCIMENTO ? ic('card', 12, 2.2) : '';
+    return `<button type="button" class="${cls}" onclick="selDia('${d}')" aria-label="${fmtDataLonga(d)}: ${itens.length} lançamento(s)">
+      ${mk ? `<span class="mk">${mk}</span>` : ''}<div class="n">${dia}</div><div class="dots">${dots}</div>
+      ${itens.length ? `<div class="tot">${tot >= 0 ? '+' : '−'}${compacto(Math.round(Math.abs(tot)))}</div>` : ''}</button>`;
+  };
+  const leg = (cls, cor, txt) => `<span><span class="dot ${cls}" style="--c:${cor}"></span>${txt}</span>`;
+  return `<div class="cal">${['D','S','T','Q','Q','S','S'].map(x => `<div class="dw">${x}</div>`).join('')}
+    ${'<div class="d fora"></div>'.repeat(vazios)}${dias.map(celula).join('')}</div>
+    <div class="legenda">${leg('', 'var(--neg)', 'Pago')}${leg('vaz', 'var(--neg)', 'Programado')}${leg('prev', 'var(--neg)', 'Previsão')}
+      ${leg('', 'var(--pos)', 'Entrada')}${leg('', '#3b82f6', 'Investimento')}
+      <span>${ic('wallet', 13, 2.2)}Salário</span><span>${ic('card', 13, 2.2)}Fatura (dia ${CARTAO_VENCIMENTO})</span>
+      <span><i class="bg" style="background:var(--warn-soft)"></i>Saldo abaixo de ${fmtBRL(RESERVA_MINIMA)}</span><span><i class="bg" style="background:var(--neg-soft)"></i>Saldo negativo</span></div>`;
+}
+function diaHTML(){
+  const g = lancDoMes(), d = diaAtual(g), itens = g[d] || [], saldo = saldosDoMes([d])[d];
+  const fatura = itens.filter(ehCartao);
+  const tit = cap(new Date(d + 'T12:00').toLocaleDateString('pt-BR', { weekday:'short', day:'numeric', month:'short' }).replace(/\./g, ''));
+  return `<div class="dia-head"><h2>${tit}</h2>${saldo != null ? `<span class="small muted">saldo ao fim do dia <b style="color:var(--text)">${fmtBRL(saldo)}</b></span>` : ''}</div>
+    ${fatura.length ? `<div class="small muted">Fatura do cartão · ${fatura.length} lançamento(s) · ${fmtBRL(soma(fatura))}</div>` : ''}
+    ${itens.length ? `<ul class="list" style="margin-top:4px">${itens.map(r => itemHTML(r, { pagar: true, semData: true })).join('')}</ul>`
+      : `<div class="empty" style="padding:18px 0 8px">Nenhum lançamento neste dia.</div>`}`;
+}
+function selDia(d){ S.diaSel = d; $('#calBox').innerHTML = calendarioHTML(); $('#diaBox').innerHTML = diaHTML(); }
+
 /* Busca: só a lista é refeita; a tela inteira só quando a busca começa ou termina (mostra/esconde o mês) */
 function aoBuscar(input){
   const antes = !!S.busca.trim(); S.busca = input.value;

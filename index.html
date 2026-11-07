@@ -152,6 +152,10 @@ input[type=checkbox]{width:20px;height:20px;accent-color:var(--brand);flex:0 0 a
 .tipochip{display:inline-flex;align-items:center;gap:8px;border:0;background:color-mix(in srgb,var(--accent) 14%,transparent);color:var(--accent);font-weight:700;font-size:14px;border-radius:99px;padding:6px 13px 6px 7px;cursor:pointer;margin-bottom:4px}
 .tipochip .ti{width:26px;height:26px;border-radius:50%;display:grid;place-items:center;background:color-mix(in srgb,var(--accent) 18%,transparent)}
 .tipochip small{font-weight:500;opacity:.8;font-size:12.5px}
+.card.sug{background:var(--tint);border-color:color-mix(in srgb,var(--accent) 25%,var(--line))}
+.card.sug h2{display:flex;align-items:center;gap:8px;color:var(--accent)}
+.card.sug .v{font-size:22px;font-weight:700;color:var(--accent);letter-spacing:-.01em}
+.card.sug .btn{background:var(--accent);color:#fff} :root[data-theme="dark"] .card.sug .btn{color:#0b0e13}
 
 /* menu inferior */
 nav.tabs{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(12px + env(safe-area-inset-bottom));z-index:10;width:calc(100% - 24px);max-width:480px;background:color-mix(in srgb,var(--card) 92%,transparent);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border:1px solid var(--line);border-radius:24px;box-shadow:var(--shadow-up);display:flex;align-items:center;padding:6px}
@@ -243,6 +247,7 @@ const TABLE_NAME = 'Tabela1';
 const INICIO_CONTROLE = '2026-11'; // o app não mostra meses antes deste (o histórico anterior está no backup)
 const CARTAO_VENCIMENTO = 12;      // dia em que a fatura vence: compras no cartão são gravadas nesse dia do mês da fatura
 const CARTAO_MELHOR_DIA = 5;       // compras a partir deste dia caem na fatura do mês seguinte
+const RESERVA_MINIMA = 500;        // a sugestão de investimento nunca deixa o saldo projetado abaixo disto
 
 const TIPOS = ['Saída','Entrada','Investimento','Retirada'];
 const FORMAS = ['Débito','Cartão','Conta','Dinheiro'];
@@ -637,7 +642,11 @@ function calcular(){
   // projetado para o fim do mês: inclui programados e previsões até o último dia do mês
   const fimMes = ultimoDiaMes(ym(hoje)), ateFim = ord.filter(r => r.data <= fimMes);
   const saldoFimMes = ateFim.length ? ateFim[ateFim.length - 1].saldo : null;
-  return { ord, saldoReal, saldoFimMes, fimMes, dinheiro, investido, patrimonio: saldoReal + investido + dinheiro, menor, proxSal };
+  // sugestão de investimento: investir hoje reduz todos os saldos futuros, então o limite é o menor saldo projetado
+  // (que já desconta contas programadas e previsões) menos a reserva; arredondado para baixo, de 50 em 50
+  const pior = menor ? menor.saldo : saldoReal;
+  const sugestao = Math.max(0, Math.floor((Math.min(pior, saldoReal) - RESERVA_MINIMA) / 50) * 50);
+  return { ord, saldoReal, saldoFimMes, fimMes, dinheiro, investido, patrimonio: saldoReal + investido + dinheiro, menor, proxSal, sugestao };
 }
 function resumoMes(mes){
   if (S._resumo.has(mes)) return S._resumo.get(mes);
@@ -733,6 +742,13 @@ const telas = {
     const prevCard = prevs.length ? `<div class="card"><div class="h2row"><h2>Previsões do mês</h2><span class="sub">${fmtBRL(soma(prevs))} a gastar</span></div>
       <ul class="list">${prevs.map(itemCompactoHTML).join('')}</ul>
       <div class="small muted" style="margin-top:8px">Toque em Registrar quando gastar: informe o valor real e, se foi só uma parte, o restante continua previsto.</div></div>` : '';
+    const base = m ? `o menor saldo projetado é ${fmtBRL(m.saldo)} em ${fmtData(m.data)}` : `o saldo real é ${fmtBRL(c.saldoReal)}`;
+    const sugCard = c.sugestao > 0
+      ? `<div class="card sug t-invest"><div class="h2row"><h2>${ic('trend', 17, 2.2)}Dá para investir</h2><span class="v">${fmtBRL(c.sugestao)}</span></div>
+          <div class="small muted">Já contando contas programadas e previsões, ${base}. Investindo até esse valor, o saldo não fica abaixo da reserva de ${fmtBRL(RESERVA_MINIMA)}.</div>
+          <button class="btn block" style="margin-top:12px" onclick="lancarInvestimento(${c.sugestao})">${ic('plus', 17, 2.4)}Lançar investimento</button></div>`
+      : `<div class="card sug t-invest"><div class="h2row"><h2>${ic('trend', 17, 2.2)}Investimento</h2><span class="sub">sem folga agora</span></div>
+          <div class="small muted">Já contando contas programadas e previsões, ${base}: não sobra nada acima da reserva de ${fmtBRL(RESERVA_MINIMA)}. Melhor esperar o próximo salário.</div></div>`;
     const dias = c.proxSal ? Math.round((new Date(c.proxSal.data+'T00:00') - new Date(hoje+'T00:00'))/864e5) : null;
     const previstos = {};
     if (c.proxSal) c.ord.filter(r => r.tipo === 'Saída' && r.status !== 'Pago' && r.data < c.proxSal.data).forEach(r => previstos[r.cat] = (previstos[r.cat]||0) + r.valor);
@@ -754,6 +770,7 @@ const telas = {
         <div><span>Próximo salário</span><b>${c.proxSal ? `${fmtData(c.proxSal.data)} · ${dias}d` : '—'}</b></div>
       </div>
     </section>
+    ${sugCard}
     ${prevCard}
     ${limCard}
     <div class="card"><div class="h2row"><h2>Saldo projetado</h2><span class="sub">últimos 45 dias e futuro</span></div>
@@ -1050,6 +1067,7 @@ function gerarParcelas(l, n, modo){
     status: i === 0 ? l.status : 'Programado'
   }));
 }
+const lancarInvestimento = valor => abrirForm(0, { tipo: 'Investimento', desc: 'Investimento', cat: 'Investimento', forma: 'Conta', valor, rec: 'Única' });
 function duplicar(rowNum){
   const r = linha(rowNum); if (!r) return;
   abrirForm(0, { desc: baseDesc(r.desc), cat: r.cat, tipo: r.tipo, forma: r.forma, valor: r.valor, obs: r.obs, status: 'Pago', rec: r.rec === 'Recorrente' ? 'Recorrente' : 'Única' });

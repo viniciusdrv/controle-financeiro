@@ -179,6 +179,36 @@ table.t tr:last-child td{border-bottom:0}
 input[type=checkbox]{width:20px;height:20px;accent-color:var(--brand);flex:0 0 auto}
 input.mini{width:108px;padding:8px 10px;font-size:15px;text-align:right;flex:0 0 auto}
 .item.off{opacity:.45}
+/* ===== layout de computador (telas largas); no celular nada disso se aplica ===== */
+.side{display:none}
+@media (min-width:1024px){
+  nav.tabs{display:none}
+  .app{display:grid;grid-template-columns:252px minmax(0,1fr);min-height:100vh}
+  .side{display:flex;flex-direction:column;gap:4px;position:sticky;top:0;height:100vh;padding:24px 16px;border-right:1px solid var(--line);background:var(--card)}
+  .side .brand{display:flex;align-items:center;gap:11px;font-weight:700;font-size:15.5px;letter-spacing:-.01em;margin:0 8px 24px}
+  .side .brand img{width:36px;height:36px;border-radius:11px}
+  .side .novo{margin:0 0 20px}
+  .side .navi{display:flex;align-items:center;gap:12px;border:0;background:transparent;color:var(--muted);font-weight:550;font-size:14.5px;padding:11px 12px;border-radius:12px;cursor:pointer;text-align:left;width:100%}
+  .side .navi:hover{background:var(--card2);color:var(--text)}
+  .side .navi.on{background:var(--brand-soft);color:var(--brand);font-weight:650}
+  .side .rodape{margin-top:auto;font-size:12px;line-height:1.5;color:var(--muted);padding:12px 10px 0;border-top:1px solid var(--line)}
+  .side .rodape kbd{font:600 11px Inter,system-ui;border:1px solid var(--line);border-bottom-width:2px;border-radius:5px;padding:0 5px;background:var(--card2)}
+  .content{min-width:0}
+  header.top{max-width:1220px;padding:26px 36px 12px}
+  header.top .logo{display:none}
+  header.top h1{font-size:25px} header.top h1 small{font-size:13px;margin-top:2px}
+  .wrap{max-width:1220px;padding:8px 36px 48px}
+  .demo-banner{max-width:none;margin:16px 36px 0}
+  .dash{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr);gap:20px;align-items:start}
+  .dash.lista{grid-template-columns:330px minmax(0,1fr)}
+  .dash.lista .col-a{position:sticky;top:96px}
+  .dash.lista .chips{flex-wrap:wrap;overflow:visible}
+  .dash.lista .monthnav{margin-top:0}
+  .grouph:first-child{margin-top:0}
+  .card{padding:20px} .hero{padding:26px 26px 20px} .hero .v{font-size:42px}
+  .chartbox{height:270px}
+  .toast{bottom:28px}
+}
 .login{max-width:380px;margin:0 auto;min-height:88vh;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:14px}
 .login img{width:68px;height:68px;border-radius:20px;box-shadow:0 10px 30px rgba(15,118,110,.3)}
 .login h1{margin:4px 0 0;font-size:24px;letter-spacing:-.02em}
@@ -516,13 +546,23 @@ function render(){
   const titulos = { home:'Início', lista:'Lançamentos', analise:'Análise' };
   const hojeTxt = new Date().toLocaleDateString('pt-BR', { weekday:'long', day:'numeric', month:'long' });
   const tab = (k, i, l) => `<button class="${S.tab===k?'on':''}" onclick="irPara('${k}')" aria-label="${l}">${ic(i, 22, S.tab===k ? 2.2 : 1.8)}${l}</button>`;
-  $('#root').innerHTML = `
+  const navi = (k, i, l) => `<button class="navi ${S.tab===k?'on':''}" onclick="irPara('${k}')">${ic(i, 20, S.tab===k ? 2.2 : 1.8)}${l}</button>`;
+  $('#root').innerHTML = `<div class="app">
+    <aside class="side">
+      <div class="brand"><img src="icon.svg" alt="">Controle Financeiro</div>
+      <button class="btn novo" onclick="abrirForm()">${ic('plus', 18, 2.4)}Novo lançamento</button>
+      ${navi('home','home','Início')}${navi('lista','list','Lançamentos')}${navi('analise','chart','Análise')}
+      <button class="navi" onclick="abrirConfig()">${ic('sliders', 20, 1.8)}Ajustes</button>
+      <div class="rodape">Lendo e gravando em<br><b>Controle Financeiro.xlsx</b><br>Atalho: <kbd>N</kbd> novo lançamento</div>
+    </aside>
+    <div class="content">
     ${S.mode === 'demo' ? `<div class="demo-banner">${ic('alert',16)} Modo demonstração — dados fictícios, nada é gravado na planilha</div>` : ''}
     ${S.offlineDesde ? `<div class="demo-banner">${ic('wifioff',16)} Sem internet — dados de ${new Date(S.offlineDesde).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}. Novos lançamentos são enviados depois.</div>` : ''}
     ${fila().length ? `<div class="demo-banner">${ic('clock',16)} ${fila().length} lançamento(s) guardado(s) no aparelho, aguardando internet</div>` : ''}
     <header class="top"><img class="logo" src="icon.svg" alt=""><h1>${titulos[S.tab]}<small>${hojeTxt.charAt(0).toUpperCase() + hojeTxt.slice(1)}</small></h1>
       <button class="iconbtn" title="Atualizar" aria-label="Atualizar" onclick="recarregar()">${ic('refresh',19)}</button></header>
     <main class="wrap" id="main">${S.loading ? '<div class="center"><div class="spinner"></div></div>' : telas[S.tab]()}</main>
+    </div></div>
     <nav class="tabs">${tab('home','home','Início')}${tab('lista','list','Lançamentos')}
       <button class="add" onclick="abrirForm()" aria-label="Novo lançamento">${ic('plus', 26, 2.4)}</button>
       ${tab('analise','chart','Análise')}<button onclick="abrirConfig()" aria-label="Ajustes">${ic('sliders', 22, 1.8)}Ajustes</button></nav>`;
@@ -565,7 +605,7 @@ const telas = {
     const limCard = perto.length ? `<div class="card"><div class="h2row"><h2>Limites do mês</h2><button class="btn sec sm" onclick="abrirLimites()">${ic('target',15)}Editar</button></div>
       <div class="bars">${barrasLimite(Object.fromEntries(perto.map(([c]) => [c, gastoMes[c] || 0])), Object.fromEntries(perto))}</div>
       <div class="small muted" style="margin-top:10px">Categorias com 90% ou mais do limite, incluindo o que está programado no mês.</div></div>` : '';
-    return `
+    return `<div class="dash"><div class="col-a">
     <section class="hero">
       <div class="l">Saldo em conta hoje</div>
       <div class="v">${fmtBRL(c.saldoHoje)}</div>
@@ -580,10 +620,12 @@ const telas = {
     <div class="card"><div class="h2row"><h2>Saldo projetado</h2><span class="sub">últimos 45 dias e futuro</span></div>
       <div class="legend"><span><i></i>Realizado</span><span><i class="d"></i>Projetado</span></div>
       <div class="chartbox"><canvas id="chSaldo"></canvas></div></div>
+    </div><div class="col-b">
     <div class="card"><div class="h2row"><h2>Próximas 3 semanas</h2><span class="sub">${proximos.length} pendente(s)</span></div>
       ${atrasados.length ? `<div class="alert bad">${ic('alert',18)}<span>${atrasados.length} lançamento(s) com data passada ainda não marcado(s) como pago</span></div>` : ''}
       ${proximos.length ? `<ul class="list">${proximos.map(r => itemHTML(r,{pagar:true})).join('')}</ul>` : '<div class="empty">Nada pendente nas próximas 3 semanas.</div>'}</div>
-    ${totPrev ? `<div class="card"><div class="h2row"><h2>Ainda previsto até o salário</h2><span class="sub">${fmtBRL(totPrev)}</span></div><div class="bars">${barras(previstos)}</div></div>` : ''}`;
+    ${totPrev ? `<div class="card"><div class="h2row"><h2>Ainda previsto até o salário</h2><span class="sub">${fmtBRL(totPrev)}</span></div><div class="bars">${barras(previstos)}</div></div>` : ''}
+    </div></div>`;
   },
   lista(){
     const mes = S.mes;
@@ -594,7 +636,7 @@ const telas = {
     const grupos = {}; rs.forEach(r => (grupos[r.data] = grupos[r.data] || []).push(r));
     const cats = [...new Set(S.rows.map(r=>r.cat).filter(Boolean))].sort();
     const rm = resumoMes(mes);
-    return `
+    return `<div class="dash lista"><div class="col-a">
     ${q ? '' : `${navMes(mes)}
     <div class="kpis" style="grid-template-columns:1fr 1fr">
       <div class="kpi"><div class="l">Entradas</div><div class="v pos">${fmtBRL(rm.ent)}</div></div>
@@ -603,11 +645,13 @@ const telas = {
     <button class="btn sec block" style="margin-bottom:12px" onclick="abrirProgramar(S.mes)">${ic('repeat',17)}Programar ${MESES_LONGO[+addMes(mes,1).slice(5)-1].toLowerCase()}</button>`}
     <div class="searchbox">${ic('search',18)}<input class="i" id="busca" placeholder="Buscar em todos os meses" value="${esc(S.busca)}" oninput="S.busca=this.value;renderLista()"></div>
     <div class="chips"><span class="chip ${!S.filtroCat?'on':''}" onclick="S.filtroCat='';renderLista()">Todas</span>${cats.map(c=>`<span class="chip ${S.filtroCat===c?'on':''}" onclick="S.filtroCat='${esc(c)}';renderLista()">${esc(c)}</span>`).join('')}</div>
+    </div><div class="col-b">
     <div id="listaCorpo">${Object.keys(grupos).length ? Object.entries(grupos).map(([d, items]) => {
       const tot = items.reduce((s,r)=>s+sinal(r.tipo)*r.valor,0);
       const dia = new Date(d + 'T12:00').toLocaleDateString('pt-BR', { weekday:'short', day:'2-digit', month:'short', ...(q ? { year:'numeric' } : {}) }).replace(/\./g,'');
       return `<div class="grouph"><span>${dia.charAt(0).toUpperCase() + dia.slice(1)}</span><span>${tot >= 0 ? '+' : '−'}${fmtBRL(Math.abs(tot))}</span></div><div class="card" style="padding:2px 14px;margin-bottom:6px"><ul class="list">${items.map(r=>itemHTML(r,{saldo:true, semData:true})).join('')}</ul></div>`;
-    }).join('') : '<div class="empty">Nenhum lançamento.</div>'}</div>`;
+    }).join('') : '<div class="empty">Nenhum lançamento.</div>'}</div>
+    </div></div>`;
   },
   analise(){
     const mes = S.mes, r = resumoMes(mes);
@@ -623,11 +667,14 @@ const telas = {
       <div class="kpi"><div class="l">Saídas a pagar</div><div class="v">${fmtBRL(r.pendente)}</div></div>
       <div class="kpi big"><div class="l">Menor saldo no mês</div><div class="v ${r.menor&&r.menor.saldo<0?'neg':''}">${r.menor ? `${fmtBRL(r.menor.saldo)} <span class="small muted" style="font-weight:500">em ${fmtData(r.menor.data)}</span>` : '—'}</div></div>
     </div>
+    <div class="dash"><div class="col-a">
     <div class="card"><div class="h2row"><h2>Saídas por categoria</h2><button class="btn sec sm" onclick="abrirLimites()">${ic('target',15)}Limites</button></div>${Object.keys(r.porCat).length || Object.keys(S.limites||{}).length ? `<div class="bars">${barrasLimite(r.porCat, S.limites, true)}</div>` : '<div class="empty">Sem saídas neste mês.</div>'}</div>
+    </div><div class="col-b">
     <div class="card"><h2>Mês a mês</h2><div class="chartbox"><canvas id="chMeses"></canvas></div>
       <div class="tablewrap" style="margin-top:10px"><table class="t"><thead><tr><th>Mês</th><th>Entradas</th><th>Saídas</th><th>Resultado</th></tr></thead><tbody>
       ${meses.map(m => { const x = resumoMes(m); return `<tr style="cursor:pointer" onclick="S.mes='${m}';render()"><td>${m===mes?'<b>':''}${MESES[+m.slice(5)-1]}/${m.slice(2,4)}${m===mes?'</b>':''}</td><td class="pos">${fmtBRL(x.ent)}</td><td class="neg">${fmtBRL(x.sai)}</td><td class="${x.ent-x.sai<0?'neg':''}">${fmtBRL(x.ent-x.sai)}</td></tr>`; }).join('')}
       </tbody></table></div></div>
+    </div></div>
     <div class="card"><h2>Categorias × meses</h2><div class="tablewrap">${tabelaCatMes(meses)}</div></div>`;
   }
 };
@@ -1009,6 +1056,11 @@ async function entrar(){ await msalApp.loginRedirect({ scopes: SCOPES }); }
 /* ---------------- início ---------------- */
 (async function main(){
   if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(r => r.update()).catch(() => {});
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') return $('#sheet')?.remove();
+    const digitando = /INPUT|SELECT|TEXTAREA/.test(document.activeElement?.tagName || '');
+    if (!digitando && !e.ctrlKey && !e.metaKey && !e.altKey && (e.key === 'n' || e.key === 'N') && !$('#sheet') && S.mode){ e.preventDefault(); abrirForm(); }
+  });
   if (lsGet('cf_demo')){
     S.mode = 'demo'; S.rows = dadosDemo(); S.limites = { 'Lazer': 300, 'Alimentação': 1200 }; S.limitesOk = true; render(); return;
   }

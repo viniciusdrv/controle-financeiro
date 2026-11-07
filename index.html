@@ -93,6 +93,12 @@ table.t th{color:var(--muted);font-weight:600}
 .chip.on{background:var(--brand);border-color:var(--brand);color:#fff}
 .chartbox{position:relative;height:220px}
 .demo-banner{background:var(--warn-soft);color:var(--warn);font-size:12px;text-align:center;padding:5px;font-weight:600}
+.bars .fill.warn{background:var(--warn)} .bars .fill.bad{background:var(--neg)}
+.chk{display:flex;align-items:center;gap:8px;margin:2px 0 10px;cursor:pointer;font-weight:600}
+input[type=checkbox]{width:20px;height:20px;accent-color:var(--brand);flex:0 0 auto}
+input.mini{width:108px;padding:6px 8px;font-size:15px;text-align:right;flex:0 0 auto}
+.item.off{opacity:.45}
+.h2row{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px} .h2row h2{margin:0}
 </style>
 </head>
 <body>
@@ -147,6 +153,8 @@ const S = {
   mes: ym(today()),
   busca: '', filtroCat: '',
   loading: false,
+  limites: {}, limitesRow: {}, limitesOk: false,   // aba "Limites" da planilha
+  offlineDesde: null,                             // quando está mostrando dados guardados no aparelho
 };
 let charts = {};
 
@@ -166,16 +174,25 @@ async function initMsal(){
   else { const a = msalApp.getAllAccounts(); if (a.length) msalApp.setActiveAccount(a[0]); }
   return !!msalApp.getActiveAccount();
 }
+function erroOffline(){ return Object.assign(new Error('Sem conexão com a internet'), { offline:true }); }
+const isOffline = e => !!(e && (e.offline || !navigator.onLine));
 async function token(){
   const account = msalApp.getActiveAccount();
   try { return (await msalApp.acquireTokenSilent({ scopes:SCOPES, account })).accessToken; }
-  catch(e){ await msalApp.acquireTokenRedirect({ scopes:SCOPES, account }); throw new Error('Redirecionando para login…'); }
+  catch(e){
+    if (!navigator.onLine || /network|endpoints_resolution/i.test(e.errorCode || '')) throw erroOffline();
+    await msalApp.acquireTokenRedirect({ scopes:SCOPES, account }); throw new Error('Redirecionando para login…');
+  }
 }
 async function graph(method, path, body, tentativa=0){
-  const r = await fetch('https://graph.microsoft.com/v1.0' + path, {
-    method, headers:{ Authorization:'Bearer ' + await token(), 'Content-Type':'application/json' },
-    body: body ? JSON.stringify(body) : undefined
-  });
+  const tk = await token();
+  let r;
+  try {
+    r = await fetch('https://graph.microsoft.com/v1.0' + path, {
+      method, headers:{ Authorization:'Bearer ' + tk, 'Content-Type':'application/json' },
+      body: body ? JSON.stringify(body) : (method === 'POST' ? '{}' : undefined)
+    });
+  } catch(e){ throw erroOffline(); }
   if ((r.status === 429 || r.status >= 500) && tentativa < 2){ await new Promise(ok=>setTimeout(ok, 1200*(tentativa+1))); return graph(method, path, body, tentativa+1); }
   if (!r.ok){ let m = r.status + ''; try{ const j = await r.json(); m = j.error?.message || m; }catch(e){} throw new Error(m); }
   return r.status === 204 ? null : r.json();
@@ -212,6 +229,82 @@ async function carregarGraph(){
     });
   }
   S.rows = rows; S.emptyRows = empty;
+  await carregarLimites();
+  S.offlineDesde = null;
+  lsSet('cf_cache', JSON.stringify({ t: Date.now(), rows, emptyRows: empty, sheetName: S.sheetName, limites: S.limites, limitesRow: S.limitesRow }));
+  aplicarFila();
+}
+/* Grava vários lançamentos novos nas primeiras linhas vazias (em blocos contínuos) */
+async function gravarVarias(lista){
+  await carregarGraph(); // estado mais recente, para não sobrescrever nada
+  if (S.emptyRows.length < lista.length) throw new Error(`A Tabela1 só tem ${S.emptyRows.length} linha(s) livre(s). Abra a planilha e aumente a tabela (arraste o canto inferior).`);
+  const alvo = S.emptyRows.slice(0, lista.length);
+  const base = `${await wb()}/worksheets('${encodeURIComponent(S.sheetName)}')`;
+  for (let i = 0; i < alvo.length; ){
+    let j = i; while (j + 1 < alvo.length && alvo[j+1] === alvo[j] + 1) j++;
+    const parte = lista.slice(i, j + 1), ini = alvo[i], fim = alvo[j];
+    await graph('PATCH', `${base}/range(address='A${ini}:G${fim}')`, { values: parte.map(l => linhaParaValores(l)[0]) });
+    if (parte.some(l => l.obs)) await graph('PATCH', `${base}/range(address='I${ini}:I${fim}')`, { values: parte.map(l => [l.obs || '']) });
+    i = j + 1;
+  }
+  await carregarGraph();
+}
+
+/* ---------------- limites por categoria (aba "Limites") ---------------- */
+const CATS_LIMITE = CATEGORIAS.filter(c => !['Renda','Investimento','Cartão'].includes(c));
+async function carregarLimites(){
+  try {
+    const res = await graph('GET', `${await wb()}/worksheets('Limites')/range(address='A1:B60')?$select=values`);
+    const lim = {}, pos = {};
+    res.values.forEach((v, i) => {
+      const c = String(v[0]).trim(); if (i === 0 || !c) return;
+      pos[c] = i + 1; const n = Number(v[1]); if (v[1] !== '' && n > 0) lim[c] = n;
+    });
+    S.limites = lim; S.limitesRow = pos; S.limitesOk = true;
+  } catch(e){ if (isOffline(e)) throw e; S.limites = {}; S.limitesRow = {}; S.limitesOk = false; }
+}
+async function criarAbaLimites(){
+  const w = await wb(), n = CATS_LIMITE.length, fim = n + 1, T = 'Timeline!';
+  await graph('POST', `${w}/worksheets/add`, { name: 'Limites' });
+  const mes = `${T}$A$2:$A$581,">="&(EOMONTH(TODAY(),-1)+1),${T}$A$2:$A$581,"<="&EOMONTH(TODAY(),0)`;
+  const formulas = [['Categoria','Limite mensal','Previsto no mês atual','Disponível'],
+    ...CATS_LIMITE.map((c, i) => { const r = i + 2; return [c, '', `=SUMIFS(${T}$G$2:$G$581,${T}$D$2:$D$581,"Saída",${T}$J$2:$J$581,$A${r},${mes})`, `=IF(B${r}="","",B${r}-C${r})`]; })];
+  const base = `${w}/worksheets('Limites')`;
+  await graph('PATCH', `${base}/range(address='A1:D${fim}')`, { formulas });
+  await graph('PATCH', `${base}/range(address='B2:D${fim}')`, { numberFormat: Array.from({ length: n }, () => Array(3).fill('"R$" #,##0.00')) });
+  await graph('PATCH', `${base}/range(address='A1:D1')/format/font`, { bold: true });
+  try { await graph('POST', `${base}/range(address='A1:D${fim}')/format/autofitColumns`); } catch(e){}
+}
+async function gravarLimites(valores){ // valores: { categoria: número ou '' }
+  const linhas = Object.values(S.limitesRow); if (!linhas.length) return;
+  const ini = Math.min(...linhas), fim = Math.max(...linhas);
+  const porLinha = Object.fromEntries(Object.entries(S.limitesRow).map(([c, r]) => [r, c]));
+  const values = []; for (let r = ini; r <= fim; r++){ const c = porLinha[r]; values.push([c && valores[c] !== undefined ? valores[c] : (c && S.limites[c] ? S.limites[c] : '')]); }
+  await graph('PATCH', `${await wb()}/worksheets('Limites')/range(address='B${ini}:B${fim}')`, { values });
+  await carregarLimites();
+}
+
+/* ---------------- fila offline ---------------- */
+const fila = () => { try { return JSON.parse(lsGet('cf_fila') || '[]'); } catch(e){ return []; } };
+const setFila = f => lsSet('cf_fila', f.length ? JSON.stringify(f) : null);
+function aplicarFila(){ S.rows = S.rows.filter(r => !r.pendente).concat(fila().map((l, i) => ({ ...l, row: -(i + 1), pendente: true }))); }
+async function enviarFila(){
+  const f = fila(); if (!f.length || S.mode !== 'graph') return;
+  try {
+    await gravarVarias(f); setFila([]); aplicarFila();
+    toast(`${f.length} lançamento(s) guardado(s) enviado(s) para a planilha ✓`); render();
+  } catch(e){ if (!isOffline(e)) toast('Erro ao enviar lançamentos guardados: ' + e.message, 5000); }
+}
+/* Insere lançamentos novos; sem internet, guarda no aparelho. Retorna true se ficou guardado. */
+async function inserirNovos(lista){
+  if (S.mode !== 'graph'){ let m = Math.max(1, ...S.rows.map(r => r.row)); lista.forEach(l => S.rows.push({ row: ++m, ...l })); return false; }
+  try { await gravarVarias(lista); return false; }
+  catch(e){ if (!isOffline(e)) throw e; setFila(fila().concat(lista)); aplicarFila(); return true; }
+}
+function addMesesData(iso, k){
+  const [y, m, d] = iso.split('-').map(Number);
+  const ult = new Date(y, m - 1 + k + 1, 0).getDate();
+  return isoLocal(new Date(y, m - 1 + k, Math.min(d, ult)));
 }
 function linhaParaValores(l){ return [[ isoToSerial(l.data), l.desc, l.cat, l.tipo, l.forma, l.status, l.valor ]]; }
 async function gravarLinha(rowNum, l){
@@ -291,6 +384,8 @@ function render(){
   const tabs = [['home','🏠','Início'],['lista','📋','Lançamentos'],['add','+','Lançar'],['analise','📊','Análise']];
   $('#root').innerHTML = `
     ${S.mode === 'demo' ? '<div class="demo-banner">Modo demonstração — dados fictícios, nada é gravado na planilha</div>' : ''}
+    ${S.offlineDesde ? `<div class="demo-banner">📴 Sem internet — mostrando dados de ${new Date(S.offlineDesde).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}. Novos lançamentos ficam guardados e são enviados depois.</div>` : ''}
+    ${fila().length ? `<div class="demo-banner">⏳ ${fila().length} lançamento(s) guardado(s) no aparelho, aguardando internet para ir à planilha</div>` : ''}
     <header class="top"><h1>💰 Controle Financeiro</h1>
       <button class="iconbtn" title="Atualizar" onclick="recarregar()">⟳</button>
       <button class="iconbtn" title="Configurações" onclick="abrirConfig()">⚙️</button></header>
@@ -303,12 +398,12 @@ function irPara(t){ S.tab = t; lsSet('cf_tab', t); render(); scrollTo(0,0); }
 function itemHTML(r, opts={}){
   const t = normTipo(r.tipo), s = sinal(r.tipo);
   const cls = t === 'Investimento' ? 'muted' : (s > 0 ? 'pos' : '');
-  return `<li class="item" onclick="abrirForm(${r.row})">
-    <div class="main"><div class="d">${esc(r.desc)}${r.status !== 'Pago' ? `<span class="badge ${esc(r.status)}">${esc(r.status)}</span>` : ''}</div>
+  return `<li class="item" ${opts.noclick ? 'style="cursor:default"' : `onclick="abrirForm(${r.row})"`}>
+    <div class="main"><div class="d">${esc(r.desc)}${r.pendente ? '<span class="badge Previsão">⏳ envio</span>' : (r.status !== 'Pago' ? `<span class="badge ${esc(r.status)}">${esc(r.status)}</span>` : '')}</div>
     <div class="s">${fmtData(r.data)} · ${esc(r.cat)} · ${esc(r.forma)}${r.obs ? ' · ' + esc(r.obs) : ''}</div></div>
     <div style="text-align:right"><div class="val ${cls}">${s > 0 ? '+' : '−'} ${fmtBRL(r.valor)}</div>
     ${opts.saldo && r.saldo != null ? `<div class="s">saldo ${fmtBRL(r.saldo)}</div>` : ''}
-    ${opts.pagar && r.status !== 'Pago' ? `<button class="btn sm" style="margin-top:4px" onclick="event.stopPropagation();marcarPago(${r.row})">✓ Pago</button>` : ''}</div></li>`;
+    ${opts.pagar && r.status !== 'Pago' && !r.pendente ? `<button class="btn sm" style="margin-top:4px" onclick="event.stopPropagation();marcarPago(${r.row})">✓ Pago</button>` : ''}</div></li>`;
 }
 
 const telas = {
@@ -328,6 +423,11 @@ const telas = {
     const previstos = {};
     if (c.proxSal) c.ord.filter(r => normTipo(r.tipo)==='Saída' && r.status!=='Pago' && r.data < c.proxSal.data).forEach(r => previstos[r.cat] = (previstos[r.cat]||0)+r.valor);
     const totPrev = Object.values(previstos).reduce((a,b)=>a+b,0);
+    const gastoMes = resumoMes(ym(hoje)).porCat;
+    const perto = Object.entries(S.limites || {}).filter(([c, L]) => (gastoMes[c] || 0) >= 0.9 * L);
+    const limCard = perto.length ? `<div class="card"><div class="h2row"><h2>⚠️ Limites do mês</h2><button class="btn sec sm" onclick="abrirLimites()">Editar</button></div>
+      <div class="bars">${barrasLimite(Object.fromEntries(perto.map(([c]) => [c, gastoMes[c] || 0])), S.limites)}</div>
+      <div class="small muted">Categorias com 90% ou mais do limite (inclui o que está programado no mês).</div></div>` : '';
     return `
     <div class="kpis">
       <div class="kpi big"><div class="l">Saldo em conta hoje</div><div class="v ${c.saldoHoje<0?'neg':''}">${fmtBRL(c.saldoHoje)}</div></div>
@@ -337,6 +437,7 @@ const telas = {
       <div class="kpi"><div class="l">Próximo salário</div><div class="v">${c.proxSal ? `${fmtData(c.proxSal.data)} <span class="small muted">(${dias} dias)</span>` : '—'}</div></div>
     </div>
     ${alerta}
+    ${limCard}
     <div class="card"><h2>Saldo projetado</h2><div class="chartbox"><canvas id="chSaldo"></canvas></div></div>
     <div class="card"><h2>A pagar / receber — próximas 3 semanas</h2>
       ${atrasados.length ? `<div class="small neg" style="margin-bottom:6px">⚠️ ${atrasados.length} lançamento(s) com data passada ainda não marcado(s) como pago</div>` : ''}
@@ -352,7 +453,8 @@ const telas = {
     const grupos = {}; rs.forEach(r => (grupos[r.data] = grupos[r.data] || []).push(r));
     const cats = [...new Set(S.rows.map(r=>r.cat).filter(Boolean))].sort();
     return `
-    ${q ? '' : `<div class="monthnav"><button class="btn sec sm" onclick="S.mes=addMes(S.mes,-1);render()">◀</button><strong>${nomeMes(mes)}</strong><button class="btn sec sm" onclick="S.mes=addMes(S.mes,1);render()">▶</button></div>`}
+    ${q ? '' : `<div class="monthnav"><button class="btn sec sm" onclick="S.mes=addMes(S.mes,-1);render()">◀</button><strong>${nomeMes(mes)}</strong><button class="btn sec sm" onclick="S.mes=addMes(S.mes,1);render()">▶</button></div>
+    <button class="btn sec" style="width:100%;margin-bottom:10px" onclick="abrirProgramar(S.mes)">🔁 Programar ${MESES_LONGO[+addMes(mes,1).slice(5)-1].toLowerCase()} a partir deste mês</button>`}
     <input class="i" id="busca" placeholder="🔎 Buscar em todos os meses…" value="${esc(S.busca)}" oninput="S.busca=this.value;renderLista()" style="margin-bottom:10px">
     <div class="chips"><span class="chip ${!S.filtroCat?'on':''}" onclick="S.filtroCat='';renderLista()">Todas</span>${cats.map(c=>`<span class="chip ${S.filtroCat===c?'on':''}" onclick="S.filtroCat='${esc(c)}';renderLista()">${esc(c)}</span>`).join('')}</div>
     <div id="listaCorpo">${Object.keys(grupos).length ? Object.entries(grupos).map(([d, items]) => {
@@ -369,12 +471,12 @@ const telas = {
       <div class="kpi"><div class="l">Entradas</div><div class="v pos">${fmtBRL(r.ent)}</div></div>
       <div class="kpi"><div class="l">Saídas</div><div class="v neg">${fmtBRL(r.sai)}</div></div>
       <div class="kpi"><div class="l">Resultado</div><div class="v ${r.ent-r.sai<0?'neg':'pos'}">${fmtBRL(r.ent - r.sai)}</div></div>
-      <div class="kpi"><div class="l">Cartão no mês</div><div class="v">${fmtBRL(r.cartao)}</div></div>
+      <div class="kpi" style="cursor:pointer" onclick="abrirFatura('${mes}')"><div class="l">💳 Cartão no mês ›</div><div class="v">${fmtBRL(r.cartao)}</div></div>
       <div class="kpi"><div class="l">Investido no mês</div><div class="v">${fmtBRL(r.inv)}</div></div>
       <div class="kpi"><div class="l">Saídas ainda não pagas</div><div class="v">${fmtBRL(r.pendente)}</div></div>
       <div class="kpi big"><div class="l">Menor saldo no mês</div><div class="v ${r.menor&&r.menor.saldo<0?'neg':''}">${r.menor ? `${fmtBRL(r.menor.saldo)} <span class="small muted">em ${fmtData(r.menor.data)}</span>` : '—'}</div></div>
     </div>
-    <div class="card"><h2>Saídas por categoria</h2>${Object.keys(r.porCat).length ? `<div class="bars">${barras(r.porCat, true)}</div>` : '<div class="muted">Sem saídas neste mês.</div>'}</div>
+    <div class="card"><div class="h2row"><h2>Saídas por categoria</h2><button class="btn sec sm" onclick="abrirLimites()">🎯 Limites</button></div>${Object.keys(r.porCat).length || Object.keys(S.limites||{}).length ? `<div class="bars">${barrasLimite(r.porCat, S.limites, true)}</div>` : '<div class="muted">Sem saídas neste mês.</div>'}</div>
     <div class="card"><h2>Mês a mês</h2><div class="chartbox"><canvas id="chMeses"></canvas></div>
       <div class="tablewrap" style="margin-top:10px"><table class="t"><thead><tr><th>Mês</th><th>Entradas</th><th>Saídas</th><th>Resultado</th></tr></thead><tbody>
       ${meses.map(m => { const x = resumoMes(m); return `<tr style="cursor:pointer" onclick="S.mes='${m}';render()"><td>${m===mes?'<b>':''}${MESES[+m.slice(5)-1]}/${m.slice(2,4)}${m===mes?'</b>':''}</td><td class="pos">${fmtBRL(x.ent)}</td><td class="neg">${fmtBRL(x.sai)}</td><td class="${x.ent-x.sai<0?'neg':''}">${fmtBRL(x.ent-x.sai)}</td></tr>`; }).join('')}
@@ -385,6 +487,19 @@ const telas = {
 function barras(obj, clicavel){
   const arr = Object.entries(obj).sort((a,b)=>b[1]-a[1]); const max = arr[0]?.[1] || 1;
   return arr.map(([k,v]) => `<div class="b" ${clicavel?`style="cursor:pointer" onclick="S.filtroCat='${esc(k)}';S.busca='';irPara('lista')"`:''}><div class="t"><span>${esc(k)}</span><b>${fmtBRL(v)}</b></div><div class="track"><div class="fill" style="width:${Math.max(2,v/max*100)}%"></div></div></div>`).join('');
+}
+function barrasLimite(porCat, lim, clicavel){
+  lim = lim || {};
+  const cats = [...new Set([...Object.keys(porCat), ...Object.keys(lim)])];
+  const max = Math.max(1, ...cats.map(c => porCat[c] || 0));
+  return cats.sort((a,b) => (porCat[b]||0) - (porCat[a]||0)).map(c => {
+    const g = porCat[c] || 0, L = lim[c];
+    const pct = L ? g / L * 100 : g / max * 100;
+    const cls = L ? (g > L ? 'bad' : g >= 0.9 * L ? 'warn' : '') : '';
+    return `<div class="b" ${clicavel ? `style="cursor:pointer" onclick="S.filtroCat='${esc(c)}';S.busca='';irPara('lista')"` : ''}>
+      <div class="t"><span>${esc(c)}</span><b class="${cls==='bad'?'neg':''}">${fmtBRL(g)}${L ? ` <span class="muted small">de ${fmtBRL(L)}</span>` : ''}</b></div>
+      <div class="track"><div class="fill ${cls}" style="width:${Math.min(100, Math.max(2, pct))}%"></div></div></div>`;
+  }).join('');
 }
 function tabelaCatMes(meses){
   const cats = [...new Set(S.rows.filter(r=>normTipo(r.tipo)==='Saída').map(r=>r.cat))].sort();
@@ -438,9 +553,10 @@ const posRender = {
 };
 
 /* ---------------- formulário de lançamento ---------------- */
-function abrirForm(rowNum){
+function abrirForm(rowNum, prefill){
+  if (rowNum < 0) return toast('Este lançamento está guardado no aparelho e vai para a planilha quando houver internet.', 4000);
   const ed = rowNum ? S.rows.find(r => r.row === rowNum) : null;
-  const l = ed ? { ...ed, tipo: normTipo(ed.tipo) } : { data: today(), desc:'', cat:'', tipo:'Saída', forma:'Débito', status:'Pago', valor:'', obs:'' };
+  const l = ed ? { ...ed, tipo: normTipo(ed.tipo) } : { data: today(), desc:'', cat:'', tipo:'Saída', forma:'Débito', status:'Pago', valor:'', obs:'', ...(prefill || {}) };
   const descs = [...new Set(S.rows.map(r => r.desc).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'pt-BR'));
   const opt = (arr, sel) => arr.map(v => `<option ${v===sel?'selected':''}>${esc(v)}</option>`).join('');
   const bg = document.createElement('div'); bg.className = 'sheet-bg'; bg.id = 'sheet';
@@ -459,8 +575,14 @@ function abrirForm(rowNum){
       <label class="f"><span>Forma</span><select class="i" id="fForma">${opt(FORMAS, l.forma)}</select></label>
     </div>
     <label class="f"><span>Observação (opcional)</span><input class="i" id="fObs" value="${esc(l.obs)}"></label>
+    ${ed ? '' : `<label class="chk"><input type="checkbox" id="fParc"> Compra parcelada</label>
+    <div id="parcBox" style="display:none"><div class="row">
+      <label class="f"><span>Nº de parcelas</span><input class="i" id="fNParc" type="number" min="2" max="60" value="2" inputmode="numeric"></label>
+      <label class="f"><span>O valor digitado é</span><select class="i" id="fParcModo"><option value="parcela">de cada parcela</option><option value="total">o total da compra</option></select></label>
+    </div><div id="parcInfo" class="small muted" style="margin:-4px 0 10px"></div></div>`}
     <div class="row" style="margin-top:6px">
-      ${ed ? `<button class="btn danger" style="flex:0 0 auto" onclick="excluir(${ed.row})">Excluir</button>` : ''}
+      ${ed ? `<button class="btn danger" style="flex:0 0 auto" onclick="excluir(${ed.row})">Excluir</button>
+      <button class="btn sec" style="flex:0 0 auto" onclick="duplicar(${ed.row})">Duplicar</button>` : ''}
       <button class="btn" id="fSalvar" onclick="salvar(${ed ? ed.row : 0})">${ed ? 'Salvar alterações' : 'Lançar'}</button>
     </div>
     ${ed ? `<div class="small muted" style="margin-top:8px">Linha ${ed.row} da aba ${esc(S.sheetName)}</div>` : ''}
@@ -482,35 +604,58 @@ function abrirForm(rowNum){
     }
   });
   $('#fData').addEventListener('change', e => { if (!ed) $('#fStatus').value = e.target.value > today() ? 'Programado' : 'Pago'; });
-  if (!ed) setTimeout(() => $('#fValor').focus(), 50);
+  if (!ed){
+    const info = () => {
+      const lst = gerarParcelas(lerForm(), parseInt($('#fNParc').value, 10), $('#fParcModo').value);
+      $('#parcInfo').textContent = lst ? `${lst.length}× de ${fmtBRL(lst[0].valor)} (total ${fmtBRL(lst.reduce((s,x)=>s+x.valor,0))}), de ${fmtDataLonga(lst[0].data)} a ${fmtDataLonga(lst[lst.length-1].data)}. A descrição recebe "1/${lst.length}", "2/${lst.length}"…` : 'Informe valor, data e de 2 a 60 parcelas.';
+    };
+    $('#fParc').addEventListener('change', e => { $('#parcBox').style.display = e.target.checked ? '' : 'none'; info(); });
+    ['#fNParc','#fParcModo','#fValor','#fData'].forEach(s => $(s).addEventListener('input', () => { if ($('#fParc').checked) info(); }));
+    setTimeout(() => $('#fValor').focus(), 50);
+  }
 }
-async function salvar(rowNum){
-  const l = {
+function lerForm(){
+  return {
     tipo: document.querySelector('#segTipo button.on').dataset.v,
     valor: parseValor($('#fValor').value), desc: $('#fDesc').value.trim(), data: $('#fData').value,
     cat: $('#fCat').value, forma: $('#fForma').value, status: $('#fStatus').value, obs: $('#fObs').value.trim()
   };
+}
+function gerarParcelas(l, n, modo){
+  if (!(n >= 2 && n <= 60) || !(l.valor > 0) || !l.data) return null;
+  const total = Math.round(l.valor * 100) * (modo === 'total' ? 1 : n);
+  const base = Math.floor(total / n), resto = total - base * n;
+  return Array.from({ length: n }, (_, i) => ({
+    ...l, desc: `${l.desc} ${i+1}/${n}`, data: addMesesData(l.data, i),
+    valor: (base + (i === n - 1 ? resto : 0)) / 100,
+    status: i === 0 ? l.status : 'Programado'
+  }));
+}
+function duplicar(rowNum){
+  const r = S.rows.find(x => x.row === rowNum); if (!r) return;
+  $('#sheet')?.remove();
+  abrirForm(0, { desc: r.desc, cat: r.cat, tipo: normTipo(r.tipo), forma: r.forma, valor: r.valor, obs: r.obs, status: 'Pago' });
+}
+async function salvar(rowNum){
+  const l = lerForm();
   if (!(l.valor > 0)) return toast('Informe um valor válido');
   if (!l.desc) return toast('Informe a descrição');
   if (!l.data) return toast('Informe a data');
   if (!l.cat) return toast('Escolha a categoria');
+  let lista = [l];
+  if (!rowNum && $('#fParc')?.checked){
+    lista = gerarParcelas(l, parseInt($('#fNParc').value, 10), $('#fParcModo').value);
+    if (!lista) return toast('Informe de 2 a 60 parcelas');
+  }
   const btn = $('#fSalvar'); btn.disabled = true; btn.textContent = 'Salvando…';
   try {
-    if (S.mode === 'graph'){
-      let alvo = rowNum;
-      if (!alvo){
-        await carregarGraph(); // pega o estado mais recente para não sobrescrever nada
-        alvo = S.emptyRows[0];
-        if (!alvo) throw new Error('A Tabela1 está cheia. Abra a planilha e aumente a tabela (arraste o canto inferior).');
-      }
-      await gravarLinha(alvo, l);
-      await carregarGraph();
-    } else {
-      if (rowNum) Object.assign(S.rows.find(r => r.row === rowNum), l);
-      else S.rows.push({ row: Math.max(1, ...S.rows.map(r=>r.row)) + 1, ...l });
-    }
+    let guardado = false;
+    if (rowNum){
+      if (S.mode === 'graph'){ await gravarLinha(rowNum, l); await carregarGraph(); }
+      else Object.assign(S.rows.find(r => r.row === rowNum), l);
+    } else guardado = await inserirNovos(lista);
     $('#sheet')?.remove();
-    toast(rowNum ? 'Alterações salvas ✓' : 'Lançado ✓');
+    toast(guardado ? 'Sem internet: guardado no aparelho, será enviado à planilha depois' : rowNum ? 'Alterações salvas ✓' : lista.length > 1 ? `${lista.length} parcelas lançadas ✓` : 'Lançado ✓', guardado ? 4500 : 2600);
     render();
   } catch(e){ btn.disabled = false; btn.textContent = 'Tentar de novo'; toast('Erro: ' + e.message, 5000); }
 }
@@ -534,6 +679,115 @@ async function marcarPago(rowNum){
   } catch(e){ toast('Erro: ' + e.message, 5000); }
 }
 
+/* ---------------- janelas auxiliares ---------------- */
+function abrirSheet(html){
+  $('#sheet')?.remove();
+  const bg = document.createElement('div'); bg.className = 'sheet-bg'; bg.id = 'sheet';
+  bg.onclick = e => { if (e.target === bg) bg.remove(); };
+  bg.innerHTML = `<div class="sheet">${html}</div>`; document.body.appendChild(bg); return bg;
+}
+const fechar = `<button class="iconbtn" onclick="$('#sheet').remove()">✕</button>`;
+
+/* Programar o próximo mês a partir dos lançamentos de um mês */
+const baseDesc = d => d.replace(/\s*\d+\/\d+$/, '').trim();
+function abrirProgramar(orig){
+  const dest = addMes(orig, 1);
+  const noDestino = new Set(S.rows.filter(r => r.data && ym(r.data) === dest).map(r => r.desc.trim().toLowerCase()));
+  const meses = {}; S.rows.forEach(r => { if (!r.data) return; const k = baseDesc(r.desc).toLowerCase(); (meses[k] = meses[k] || new Set()).add(ym(r.data)); });
+  const itens = S.rows.filter(r => r.data && ym(r.data) === orig && !r.pendente && r.status !== 'Marco zero')
+    .sort((a,b) => a.data === b.data ? a.row - b.row : (a.data < b.data ? -1 : 1))
+    .map(r => {
+      const p = r.desc.match(/^(.*?)\s*(\d+)\/(\d+)$/);
+      let desc = r.desc, nota = '';
+      if (p){ const a = +p[2], n = +p[3]; if (a >= n) nota = 'última parcela'; else desc = `${p[1]} ${a+1}/${n}`; }
+      if (!nota && noDestino.has(desc.trim().toLowerCase())) nota = `já existe em ${MESES[+dest.slice(5)-1]}`;
+      const recorrente = (meses[baseDesc(r.desc).toLowerCase()]?.size || 0) >= 2 || !!p;
+      return { r, desc, data: addMesesData(r.data, 1), nota, marcado: !nota && recorrente };
+    });
+  S._prog = itens;
+  abrirSheet(`<h3>Programar ${nomeMes(dest)}${fechar}</h3>
+    <p class="small muted" style="margin-top:0">Copia lançamentos de ${nomeMes(orig)} para o mês seguinte como <b>Programado</b> (ou Previsão). Já vêm marcados os que se repetem em outros meses e as parcelas, que avançam para a próxima (ex.: 2/12 → 3/12). Ajuste valores se precisar.</p>
+    ${itens.length ? `<div class="row" style="margin-bottom:6px"><button class="btn sec sm" onclick="document.querySelectorAll('.progchk:not(:disabled)').forEach(c=>c.checked=true);contarProg()">Marcar todos</button><button class="btn sec sm" onclick="document.querySelectorAll('.progchk').forEach(c=>c.checked=false);contarProg()">Desmarcar todos</button></div>
+    <ul class="list card" style="padding:4px 12px">${itens.map((x, i) => `<li class="item ${x.nota ? 'off' : ''}" style="cursor:default">
+      <input type="checkbox" class="progchk" data-i="${i}" ${x.marcado ? 'checked' : ''} ${x.nota ? 'disabled' : ''} onchange="contarProg()">
+      <div class="main"><div class="d">${esc(x.desc)}</div><div class="s">${fmtData(x.data)} · ${esc(x.r.cat)} · ${esc(x.r.forma)}${x.nota ? ` · <b>${x.nota}</b>` : ''}</div></div>
+      <input class="i mini" id="progv${i}" inputmode="decimal" value="${String(x.r.valor).replace('.', ',')}" ${x.nota ? 'disabled' : ''}></li>`).join('')}</ul>
+    <button class="btn" id="progBtn" style="width:100%" onclick="salvarProgramacao()"></button>` : '<div class="muted">Nenhum lançamento neste mês para copiar.</div>'}`);
+  contarProg();
+}
+function contarProg(){ const n = document.querySelectorAll('.progchk:checked').length, b = $('#progBtn'); if (b){ b.textContent = n ? `Programar ${n} lançamento(s)` : 'Nada marcado'; b.disabled = !n; } }
+async function salvarProgramacao(){
+  const lista = [];
+  for (const c of document.querySelectorAll('.progchk:checked')){
+    const x = S._prog[+c.dataset.i], v = parseValor($('#progv' + c.dataset.i).value);
+    if (!(v > 0)) return toast(`Valor inválido em "${x.desc}"`);
+    lista.push({ data: x.data, desc: x.desc, cat: x.r.cat, tipo: normTipo(x.r.tipo), forma: x.r.forma, status: x.r.status === 'Previsão' ? 'Previsão' : 'Programado', valor: v, obs: x.r.obs || '' });
+  }
+  const b = $('#progBtn'); b.disabled = true; b.textContent = 'Gravando…';
+  try {
+    const guardado = await inserirNovos(lista);
+    $('#sheet')?.remove();
+    S.mes = ym(lista[0].data); render();
+    toast(guardado ? 'Sem internet: guardados no aparelho, serão enviados depois' : `${lista.length} lançamento(s) programado(s) ✓`, 3500);
+  } catch(e){ b.disabled = false; b.textContent = 'Tentar de novo'; toast('Erro: ' + e.message, 5000); }
+}
+
+/* Fatura do cartão no mês */
+function abrirFatura(mes){
+  const rs = S.rows.filter(r => r.data && ym(r.data) === mes && normTipo(r.tipo) === 'Saída' && r.forma === 'Cartão')
+    .sort((a,b) => a.data === b.data ? a.row - b.row : (a.data < b.data ? -1 : 1));
+  const tot = rs.reduce((s,r) => s + r.valor, 0), pago = rs.filter(r => r.status === 'Pago').reduce((s,r) => s + r.valor, 0);
+  const porCat = {}; rs.forEach(r => porCat[r.cat] = (porCat[r.cat] || 0) + r.valor);
+  const ant = resumoMes(addMes(mes, -1)).cartao;
+  abrirSheet(`<h3>💳 Cartão — ${nomeMes(mes)}${fechar}</h3>
+    <div class="kpis">
+      <div class="kpi big"><div class="l">Total no mês (${rs.length} lançamentos)</div><div class="v">${fmtBRL(tot)}</div>
+        <div class="small muted">${ant ? `Mês anterior: ${fmtBRL(ant)} (${tot >= ant ? '+' : '−'}${fmtBRL(Math.abs(tot - ant))})` : ''}</div></div>
+      <div class="kpi"><div class="l">Pago</div><div class="v">${fmtBRL(pago)}</div></div>
+      <div class="kpi"><div class="l">Programado / previsto</div><div class="v">${fmtBRL(tot - pago)}</div></div>
+    </div>
+    ${rs.length ? `<div class="card"><h2>Por categoria</h2><div class="bars">${barras(porCat)}</div></div>
+    <div class="card" style="padding:4px 12px"><ul class="list">${rs.map(r => itemHTML(r, { noclick: true })).join('')}</ul></div>` : '<div class="muted">Nenhuma compra no cartão neste mês.</div>'}
+    <p class="small muted">Considera as saídas com forma "Cartão" pela data lançada, igual ao quadro 💳 CARTÃO do Dashboard.</p>`);
+}
+
+/* Limites por categoria */
+function abrirLimites(){
+  if (S.mode === 'graph' && !S.limitesOk){
+    abrirSheet(`<h3>🎯 Limites por categoria${fechar}</h3>
+      <p>Defina quanto quer gastar por mês em cada categoria. O app avisa quando chegar a 90% e quando passar.</p>
+      <p class="small muted">Para os limites valerem no PC e no celular, o app vai criar uma aba <b>"Limites"</b> na sua planilha, com: Categoria, Limite mensal, Previsto no mês atual e Disponível. Você também pode editar os limites direto nessa aba.</p>
+      <button class="btn" id="limCriar" style="width:100%" onclick="criarLimitesUI()">Criar aba Limites na planilha</button>`);
+    return;
+  }
+  const cats = S.mode === 'graph' ? Object.keys(S.limitesRow) : CATS_LIMITE;
+  const gasto = resumoMes(ym(today())).porCat;
+  abrirSheet(`<h3>🎯 Limites mensais${fechar}</h3>
+    <p class="small muted" style="margin-top:0">Deixe em branco a categoria sem limite. O valor ao lado é o previsto para ${MESES_LONGO[new Date().getMonth()].toLowerCase()} (pago + programado).</p>
+    <ul class="list card" style="padding:4px 12px">${cats.map(c => `<li class="item" style="cursor:default"><div class="main"><div class="d">${esc(c)}</div><div class="s">previsto: ${fmtBRL(gasto[c] || 0)}</div></div>
+      <input class="i mini limv" data-c="${esc(c)}" inputmode="decimal" placeholder="sem limite" value="${S.limites[c] ? String(S.limites[c]).replace('.', ',') : ''}"></li>`).join('')}</ul>
+    <button class="btn" id="limBtn" style="width:100%" onclick="salvarLimitesUI()">Salvar limites</button>`);
+}
+async function criarLimitesUI(){
+  const b = $('#limCriar'); b.disabled = true; b.textContent = 'Criando aba…';
+  try { await criarAbaLimites(); await carregarLimites(); toast('Aba "Limites" criada ✓'); abrirLimites(); }
+  catch(e){ b.disabled = false; b.textContent = 'Tentar de novo'; toast('Erro: ' + e.message, 5000); }
+}
+async function salvarLimitesUI(){
+  const valores = {};
+  for (const i of document.querySelectorAll('.limv')){
+    const t = i.value.trim(); if (!t){ valores[i.dataset.c] = ''; continue; }
+    const v = parseValor(t); if (!(v > 0)) return toast(`Limite inválido em ${i.dataset.c}`);
+    valores[i.dataset.c] = v;
+  }
+  const b = $('#limBtn'); b.disabled = true; b.textContent = 'Salvando…';
+  try {
+    if (S.mode === 'graph') await gravarLimites(valores);
+    else S.limites = Object.fromEntries(Object.entries(valores).filter(([, v]) => v > 0));
+    $('#sheet')?.remove(); toast('Limites salvos ✓'); render();
+  } catch(e){ b.disabled = false; b.textContent = 'Tentar de novo'; toast('Erro: ' + e.message, 5000); }
+}
+
 /* ---------------- configurações / login ---------------- */
 function abrirConfig(){
   const conta = msalApp?.getActiveAccount();
@@ -548,12 +802,13 @@ function abrirConfig(){
   </div>`;
   document.body.appendChild(bg);
 }
-async function sair(){ lsSet('cf_tab',null); await msalApp.logoutRedirect({ account: msalApp.getActiveAccount() }); }
+async function sair(){ lsSet('cf_tab',null); lsSet('cf_cache',null); await msalApp.logoutRedirect({ account: msalApp.getActiveAccount() }); }
 async function recarregar(){
   if (S.mode !== 'graph') return toast('Modo demonstração');
   S.loading = true; render();
-  try { await carregarGraph(); } catch(e){ toast('Erro: ' + e.message, 5000); }
+  try { await carregarGraph(); } catch(e){ toast(isOffline(e) ? 'Sem internet — mostrando os dados guardados' : 'Erro: ' + e.message, 5000); }
   S.loading = false; render();
+  enviarFila();
 }
 function telaInicial(msg){
   const temId = !!clientId();
@@ -572,9 +827,11 @@ async function entrar(){ await msalApp.loginRedirect({ scopes: SCOPES }); }
 
 /* ---------------- início ---------------- */
 (async function main(){
+  if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});
   if (lsGet('cf_demo')){
-    S.mode = 'demo'; S.rows = dadosDemo(); render(); return;
+    S.mode = 'demo'; S.rows = dadosDemo(); S.limites = { 'Lazer': 300, 'Alimentação': 1200 }; S.limitesOk = true; render(); return;
   }
+  window.addEventListener('online', () => { if (S.mode === 'graph') recarregar(); });
   if (!window.msal) return telaInicial('Não foi possível carregar a biblioteca de login da Microsoft. Verifique a internet.');
   if (!clientId()) return telaInicial();
   $('#root').innerHTML = '<div class="center"><div class="spinner"></div><div class="muted">Conectando…</div></div>';
@@ -583,8 +840,17 @@ async function entrar(){ await msalApp.loginRedirect({ scopes: SCOPES }); }
     if (!logado) return telaInicial();
     S.mode = 'graph';
     $('#root').innerHTML = '<div class="center"><div class="spinner"></div><div class="muted">Lendo a planilha…</div></div>';
-    await carregarGraph();
+    try { await carregarGraph(); }
+    catch(e){
+      // sem internet: usa a última cópia guardada no aparelho
+      let cache = null; try { cache = JSON.parse(lsGet('cf_cache')); } catch(_){}
+      if (!(isOffline(e) && cache)) throw e;
+      Object.assign(S, { rows: cache.rows, emptyRows: cache.emptyRows, sheetName: cache.sheetName, limites: cache.limites || {}, limitesRow: cache.limitesRow || {},
+        limitesOk: Object.keys(cache.limitesRow || {}).length > 0, offlineDesde: cache.t });
+      aplicarFila();
+    }
     render();
+    enviarFila();
   } catch(e){
     console.error(e);
     telaInicial('Erro: ' + (e.errorMessage ? `${e.errorCode} — ${e.errorMessage}` : e.message));

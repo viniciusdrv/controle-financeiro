@@ -10,7 +10,15 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Finanças">
 <title>Controle Financeiro</title>
-<script>try { const t = localStorage.getItem('cf_tema'); if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t; } catch(e) {}</script>
+<script>
+/* Tema: "auto" (sem escolha salva) segue o aparelho; senão usa o escolhido nos Ajustes. Roda antes do CSS para não piscar. */
+window.aplicarTema = function(){
+  let t = null; try { t = localStorage.getItem('cf_tema'); } catch(e) {}
+  document.documentElement.dataset.theme = (t === 'light' || t === 'dark') ? t : (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+};
+aplicarTema();
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { aplicarTema(); window.aoMudarTema && window.aoMudarTema(); });
+</script>
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icon.svg">
@@ -18,6 +26,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <style>
 :root{
+  color-scheme:light;
   --bg:#f3f5f7; --card:#ffffff; --card2:#f7f8fa; --text:#0f172a; --muted:#64748b; --line:#e6e9ee;
   --brand:#0f766e; --brand-soft:#e0f2ef; --on-brand:#ffffff;
   --pos:#15803d; --neg:#dc2626; --warn:#c2410c;
@@ -26,19 +35,6 @@
   --shadow-up:0 8px 30px rgba(15,23,42,.12);
   --hero1:#0f766e; --hero2:#134e4a;
 }
-@media (prefers-color-scheme: dark){
-  :root:not([data-theme="light"]){
-    --bg:#0b0e13; --card:#141922; --card2:#1a202b; --text:#e8edf4; --muted:#8b97a8; --line:#232a36;
-    --brand:#2dd4bf; --brand-soft:#11302d; --on-brand:#042f2b;
-    --pos:#4ade80; --neg:#f87171; --warn:#fb923c;
-    --pos-soft:#10291b; --neg-soft:#331717; --warn-soft:#33210f;
-    --shadow:0 1px 0 rgba(255,255,255,.02); --shadow-up:0 8px 30px rgba(0,0,0,.5);
-    --hero1:#0f5f58; --hero2:#0d2f2c;
-  }
-}
-/* tema escolhido à mão nos Ajustes (data-theme no <html>) */
-:root{color-scheme:light}
-@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){color-scheme:dark} }
 :root[data-theme="dark"]{
   color-scheme:dark;
   --bg:#0b0e13; --card:#141922; --card2:#1a202b; --text:#e8edf4; --muted:#8b97a8; --line:#232a36;
@@ -62,11 +58,12 @@ header.top h1{font-size:17px;font-weight:700;margin:0;flex:1;letter-spacing:-.01
 header.top h1 small{display:block;font-size:12px;font-weight:500;color:var(--muted);letter-spacing:0}
 .iconbtn{border:0;background:var(--card);color:var(--text);width:38px;height:38px;display:grid;place-items:center;border-radius:12px;cursor:pointer;box-shadow:var(--shadow)}
 .iconbtn:hover{background:var(--card2)}
+.iconbtn:disabled{opacity:.35;cursor:default}
 .iconbtn.plain{background:transparent;box-shadow:none}
 
 /* cartões e seções */
 .card{background:var(--card);border:1px solid var(--line);border-radius:20px;padding:16px;margin-bottom:14px;box-shadow:var(--shadow)}
-.card h2,.sec-t{font-size:15px;margin:0 0 12px;font-weight:650;letter-spacing:-.01em;color:var(--text)}
+.card h2{font-size:15px;margin:0 0 12px;font-weight:650;letter-spacing:-.01em;color:var(--text)}
 .h2row{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:12px} .h2row h2{margin:0}
 .h2row .sub{font-size:12.5px;color:var(--muted);font-weight:500}
 
@@ -89,28 +86,29 @@ header.top h1 small{display:block;font-size:12px;font-weight:500;color:var(--mut
 .kpi.big{grid-column:1/-1} .kpi.big .v{font-size:24px}
 .kpi.link{cursor:pointer} .kpi.link:hover{border-color:color-mix(in srgb,var(--brand) 40%,var(--line))}
 @media (min-width:700px){.kpis{grid-template-columns:repeat(4,1fr)} .kpi.big{grid-column:span 2}}
-.alert{display:flex;gap:10px;align-items:flex-start;border-radius:14px;padding:11px 13px;margin-bottom:12px;font-weight:550;font-size:14px}
-.alert.ok{background:var(--pos-soft);color:var(--pos)} .alert.warn{background:var(--warn-soft);color:var(--warn)} .alert.bad{background:var(--neg-soft);color:var(--neg)}
+.alert{display:flex;gap:10px;align-items:flex-start;border-radius:14px;padding:11px 13px;margin-bottom:12px;font-weight:550;font-size:14px;background:var(--neg-soft);color:var(--neg)}
 .pos{color:var(--pos)} .neg{color:var(--neg)} .muted{color:var(--muted)} .small{font-size:12.5px}
 
 /* listas */
 .list{list-style:none;margin:0;padding:0}
 .item{display:flex;align-items:center;gap:12px;padding:11px 0;border-bottom:1px solid var(--line);cursor:pointer}
 .item:last-child{border-bottom:0}
+.item.off{opacity:.45}
 .item .main{flex:1;min-width:0}
 .item .d{font-weight:600;font-size:14.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:flex;align-items:center;gap:6px}
 .item .d .tx{overflow:hidden;text-overflow:ellipsis}
 .item .s{font-size:12.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:1px}
+.item .s b{color:var(--text);font-weight:650}
+.item .s .badge{margin-right:6px;vertical-align:1px}
 .item .val{font-weight:650;white-space:nowrap;text-align:right}
 .item .val small{display:block;font-size:11.5px;font-weight:500;color:var(--muted)}
 .av{width:40px;height:40px;border-radius:13px;display:grid;place-items:center;flex:0 0 auto;color:var(--c);background:color-mix(in srgb,var(--c) 14%,transparent)}
 .badge{display:inline-flex;align-items:center;gap:3px;font-size:11px;font-weight:600;padding:2px 7px;border-radius:99px;background:var(--card2);color:var(--muted);flex:0 0 auto}
 .badge.Programado{background:var(--brand-soft);color:var(--brand)} .badge.Previsão{background:var(--warn-soft);color:var(--warn)}
 .paybtn{border:1px solid var(--line);background:var(--card);color:var(--pos);border-radius:50%;width:34px;height:34px;padding:0;display:grid;place-items:center;cursor:pointer;flex:0 0 auto}
-.item .s .badge{margin-right:6px;vertical-align:1px}
+.paybtn:hover{background:var(--pos-soft);border-color:transparent}
 .regbtn{border:0;background:var(--brand-soft);color:var(--brand);border-radius:11px;height:34px;padding:0 12px;font-size:13px;font-weight:650;cursor:pointer;flex:0 0 auto}
 .regbtn:hover{filter:brightness(.97)}
-.paybtn:hover{background:var(--pos-soft);border-color:transparent}
 .grouph{font-size:12.5px;font-weight:600;color:var(--muted);margin:16px 4px 6px;display:flex;justify-content:space-between}
 .grouph:first-child{margin-top:4px}
 
@@ -123,9 +121,11 @@ header.top h1 small{display:block;font-size:12px;font-weight:500;color:var(--mut
 .btn:disabled{opacity:.5;cursor:default}
 .row{display:flex;gap:10px} .row>*{flex:1;min-width:0}
 label.f{display:block;margin-bottom:12px} label.f span{display:block;font-size:12.5px;color:var(--muted);font-weight:500;margin-bottom:5px}
-input.i,select.i,textarea.i{width:100%;padding:12px 13px;border:1px solid var(--line);border-radius:13px;background:var(--card);font-size:16px;appearance:none;-webkit-appearance:none}
+input.i,select.i{width:100%;padding:12px 13px;border:1px solid var(--line);border-radius:13px;background:var(--card);font-size:16px;appearance:none;-webkit-appearance:none}
 select.i{background-image:linear-gradient(45deg,transparent 50%,var(--muted) 50%),linear-gradient(135deg,var(--muted) 50%,transparent 50%);background-position:calc(100% - 18px) 52%,calc(100% - 13px) 52%;background-size:5px 5px;background-repeat:no-repeat;padding-right:32px}
-input.i:focus,select.i:focus,textarea.i:focus{outline:none;border-color:var(--brand);box-shadow:0 0 0 3px color-mix(in srgb,var(--brand) 20%,transparent)}
+input.i:focus,select.i:focus{outline:none;border-color:var(--brand);box-shadow:0 0 0 3px color-mix(in srgb,var(--brand) 20%,transparent)}
+input.mini{width:108px;padding:8px 10px;font-size:15px;text-align:right;flex:0 0 auto}
+input[type=checkbox]{width:20px;height:20px;accent-color:var(--brand);flex:0 0 auto}
 .valorbox{display:flex;align-items:baseline;justify-content:center;gap:6px;padding:10px 0 14px}
 .valorbox span{font-size:20px;font-weight:600;color:var(--muted)}
 .valor{border:0!important;background:transparent!important;box-shadow:none!important;font-size:40px!important;font-weight:700;text-align:center;width:220px!important;padding:0!important;letter-spacing:-.02em}
@@ -141,7 +141,7 @@ nav.tabs button.on{color:var(--brand);font-weight:650}
 nav.tabs button.add{flex:0 0 auto;width:56px;height:56px;margin:-22px 6px 0;border-radius:18px;background:var(--brand);color:var(--on-brand);box-shadow:0 8px 20px color-mix(in srgb,var(--brand) 45%,transparent);justify-content:center}
 nav.tabs button.add:hover{filter:brightness(1.06)}
 
-/* navegação de mês, chips, barras */
+/* navegação de mês, chips, barras, tabelas, gráficos */
 .monthnav{display:flex;align-items:center;gap:8px;margin:4px 0 14px}
 .monthnav strong{flex:1;text-align:center;font-size:16px;font-weight:650}
 .chips{display:flex;gap:6px;overflow-x:auto;padding-bottom:4px;margin-bottom:6px;scrollbar-width:none}
@@ -164,7 +164,7 @@ table.t tr:last-child td{border-bottom:0}
 .legend{display:flex;gap:14px;font-size:12px;color:var(--muted);margin:-4px 0 8px}
 .legend span{display:flex;align-items:center;gap:6px} .legend i{width:14px;height:3px;border-radius:2px;background:var(--brand)} .legend i.d{background:repeating-linear-gradient(90deg,var(--brand) 0 4px,transparent 4px 7px)}
 
-/* janelas */
+/* janelas, avisos */
 .sheet-bg{position:fixed;inset:0;background:rgba(8,12,18,.45);backdrop-filter:blur(2px);z-index:20;display:flex;align-items:flex-end;justify-content:center;animation:fade .15s ease}
 .sheet{background:var(--bg);width:100%;max-width:560px;max-height:92vh;overflow:auto;border-radius:26px 26px 0 0;padding:10px 18px calc(18px + env(safe-area-inset-bottom));animation:up .2s ease}
 .sheet::before{content:"";display:block;width:38px;height:4px;border-radius:9px;background:var(--line);margin:0 auto 12px}
@@ -178,10 +178,10 @@ table.t tr:last-child td{border-bottom:0}
 .empty{text-align:center;color:var(--muted);padding:26px 10px;font-size:14px}
 .demo-banner{display:flex;align-items:center;justify-content:center;gap:8px;max-width:728px;margin:10px auto 0;background:var(--warn-soft);color:var(--warn);font-size:12.5px;padding:8px 12px;border-radius:12px;font-weight:600;text-align:center}
 @media (max-width:760px){.demo-banner{margin:10px 16px 0}}
-.chk{display:flex;align-items:center;gap:8px;margin:2px 0 10px;cursor:pointer;font-weight:600}
-input[type=checkbox]{width:20px;height:20px;accent-color:var(--brand);flex:0 0 auto}
-input.mini{width:108px;padding:8px 10px;font-size:15px;text-align:right;flex:0 0 auto}
-.item.off{opacity:.45}
+.login{max-width:380px;margin:0 auto;min-height:88vh;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:14px}
+.login img{width:68px;height:68px;border-radius:20px;box-shadow:0 10px 30px rgba(15,118,110,.3)}
+.login h1{margin:4px 0 0;font-size:24px;letter-spacing:-.02em}
+
 /* ===== layout de computador (telas largas); no celular nada disso se aplica ===== */
 .side{display:none}
 @media (min-width:1024px){
@@ -212,37 +212,36 @@ input.mini{width:108px;padding:8px 10px;font-size:15px;text-align:right;flex:0 0
   .chartbox{height:270px}
   .toast{bottom:28px}
 }
-.login{max-width:380px;margin:0 auto;min-height:88vh;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:14px}
-.login img{width:68px;height:68px;border-radius:20px;box-shadow:0 10px 30px rgba(15,118,110,.3)}
-.login h1{margin:4px 0 0;font-size:24px;letter-spacing:-.02em}
 </style>
 </head>
 <body>
 <div id="root"></div>
 <script>
-/* ============================================================
-   CONFIGURAÇÃO — cole aqui o "ID do aplicativo (cliente)" do
-   registro no portal da Microsoft (veja LEIA-ME.md).
-   Se ficar vazio, o app pede o ID na primeira vez.
-   ============================================================ */
-const CLIENT_ID = '5f1e7927-b93f-4d16-9d87-628370dd7e12';
+/* ============================== CONFIGURAÇÃO ============================== */
+const CLIENT_ID = '5f1e7927-b93f-4d16-9d87-628370dd7e12'; // registro do app no portal Microsoft Entra
 const FILE_PATH = '/PESSOAL/Controle Financeiro.xlsx';
 const TABLE_NAME = 'Tabela1';
-const INICIO_CONTROLE = '2026-11'; // o app não mostra meses antes deste (histórico anterior foi arquivado no backup)
-const CARTAO_VENCIMENTO = 12; // dia em que a fatura vence: compras no cartão são gravadas nesse dia do mês da fatura
-const CARTAO_MELHOR_DIA = 5;  // compras a partir deste dia caem na fatura do mês seguinte
+const INICIO_CONTROLE = '2026-11'; // o app não mostra meses antes deste (o histórico anterior está no backup)
+const CARTAO_VENCIMENTO = 12;      // dia em que a fatura vence: compras no cartão são gravadas nesse dia do mês da fatura
+const CARTAO_MELHOR_DIA = 5;       // compras a partir deste dia caem na fatura do mês seguinte
 
 const TIPOS = ['Saída','Entrada','Investimento','Retirada'];
 const FORMAS = ['Débito','Cartão','Conta','Dinheiro'];
 const STATUS = ['Pago','Programado','Previsão'];
 const CATEGORIAS = ['Alimentação','Animais','Assinaturas','Cartão','Combustível','Cuidados Pessoais','Diversos','Educação','Investimento','Lazer','Moradia','Renda','Repasses','Saúde','Telefonia'];
+const CATS_LIMITE = CATEGORIAS.filter(c => !['Renda','Investimento','Cartão'].includes(c));
 const MESES = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
 const MESES_LONGO = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+const NAV = [['home','home','Início'], ['lista','list','Lançamentos'], ['analise','chart','Análise']];
 
-/* ---------------- utilidades ---------------- */
+/* ============================== utilidades ============================== */
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const fmtBRL = n => (Number(n)||0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'});
+const numBR = n => String(n).replace('.', ',');                 // número → texto de campo ("12,5")
+const compacto = v => Math.abs(v) >= 1000 ? (v/1000).toLocaleString('pt-BR', { maximumFractionDigits:1 }) + ' mil' : v.toLocaleString('pt-BR');
+const cap = s => s.charAt(0).toUpperCase() + s.slice(1);
+const soma = arr => arr.reduce((s, r) => s + r.valor, 0);
 const pad = n => String(n).padStart(2,'0');
 const isoLocal = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
 const today = () => isoLocal(new Date());
@@ -251,8 +250,9 @@ const fmtDataLonga = iso => iso ? `${iso.slice(8,10)}/${iso.slice(5,7)}/${iso.sl
 const ym = iso => iso.slice(0,7);
 const serialToIso = s => { const d = new Date(Date.UTC(1899,11,30) + Math.round(Number(s))*864e5); return `${d.getUTCFullYear()}-${pad(d.getUTCMonth()+1)}-${pad(d.getUTCDate())}`; };
 const isoToSerial = iso => { const [y,m,d] = iso.split('-').map(Number); return Math.round((Date.UTC(y,m-1,d) - Date.UTC(1899,11,30))/864e5); };
-const normTipo = t => t === 'Saida' ? 'Saída' : t;
 const sinal = t => (t === 'Entrada' || t === 'Retirada') ? 1 : -1; // mesma regra da planilha
+const statusPorData = iso => iso > today() ? 'Programado' : 'Pago';
+const porData = (a, b) => a.data === b.data ? a.row - b.row : (a.data < b.data ? -1 : 1); // como a planilha ordena o saldo
 function parseValor(v){
   v = String(v||'').trim().replace(/[R$\s]/g,'');
   if (v.includes(',')) v = v.replace(/\./g,'').replace(',','.');
@@ -261,8 +261,48 @@ function parseValor(v){
 function toast(msg, ms=2600){ const t=document.createElement('div'); t.className='toast'; t.textContent=msg; document.body.appendChild(t); setTimeout(()=>t.remove(),ms); }
 function lsGet(k){ try{ return localStorage.getItem(k); }catch(e){ return null; } }
 function lsSet(k,v){ try{ v==null ? localStorage.removeItem(k) : localStorage.setItem(k,v); }catch(e){} }
+const opt = (arr, sel) => arr.map(v => `<option ${v===sel?'selected':''}>${esc(v)}</option>`).join('');
+function marcarSeg(id, v){ document.querySelectorAll(`#${id} button`).forEach(b => b.classList.toggle('on', b.dataset.v === v)); }
+const segAtual = id => document.querySelector(`#${id} button.on`)?.dataset.v || '';
+/* Botão "ocupado" enquanto grava; em caso de erro volta como "Tentar de novo" */
+async function comBotao(sel, texto, fn){
+  const b = $(sel); if (b){ b.disabled = true; b.textContent = texto; }
+  try { await fn(); }
+  catch(e){ if (b){ b.disabled = false; b.textContent = 'Tentar de novo'; } toast('Erro: ' + e.message, 5000); }
+}
 
-/* ---------------- ícones (traço, 24×24) ---------------- */
+/* meses */
+const mesAbrev = m => MESES[+m.slice(5,7) - 1];
+const mesLongo = m => MESES_LONGO[+m.slice(5,7) - 1];
+const nomeMes = m => `${mesLongo(m)} ${m.slice(0,4)}`;
+const mesCurto = iso => `${mesAbrev(iso).toLowerCase()}${iso.slice(0,4) !== String(new Date().getFullYear()) ? '/' + iso.slice(2,4) : ''}`;
+function addMes(m, n){ const [y,mm] = m.split('-').map(Number); const d = new Date(y, mm-1+n, 1); return `${d.getFullYear()}-${pad(d.getMonth()+1)}`; }
+function addMesesData(iso, k){
+  const [y, m, d] = iso.split('-').map(Number);
+  return isoLocal(new Date(y, m - 1 + k, Math.min(d, new Date(y, m + k, 0).getDate())));
+}
+const ultimoDiaMes = m => { const [y, mm] = m.split('-').map(Number); return isoLocal(new Date(y, mm, 0)); };
+const ehUltimoDia = iso => !!iso && iso === ultimoDiaMes(ym(iso));
+
+/* cartão, previsões e parcelas */
+const ehCartao = r => r.forma === 'Cartão' && r.tipo === 'Saída';
+const dataFatura = m => `${m}-${pad(CARTAO_VENCIMENTO)}`;
+const faturaSugerida = (iso = today()) => +iso.slice(8,10) >= CARTAO_MELHOR_DIA ? addMes(ym(iso), 1) : ym(iso);
+/* Onde a data é escolhida: dia exato, mês da fatura (cartão) ou só o mês (previsão) */
+const modoDe = (tipo, forma, status) => forma === 'Cartão' && tipo === 'Saída' ? 'fatura' : status === 'Previsão' ? 'mes' : 'dia';
+function resolverData({ modo, dia, mes, original }){
+  if (modo === 'dia') return dia;
+  if (original && ym(original) === mes) return original; // editando sem trocar o mês: mantém a data original
+  return modo === 'fatura' ? dataFatura(mes) : ultimoDiaMes(mes);
+}
+/* "MBA 2/12" → { base:'MBA', atual:2, total:12 } */
+function parcela(desc){ const m = String(desc).match(/^(.*?)\s*(\d+)\/(\d+)$/); return m ? { base: m[1].trim(), atual: +m[2], total: +m[3] } : null; }
+const comParcela = (base, i, n) => `${base} ${i}/${n}`;
+const baseDesc = d => parcela(d)?.base ?? d.trim();
+/* Se a data cair no último dia do mês (previsão), continua no último dia nos meses seguintes */
+const mesesDepois = (iso, k) => ehUltimoDia(iso) ? ultimoDiaMes(addMes(ym(iso), k)) : addMesesData(iso, k);
+
+/* ============================== ícones e categorias ============================== */
 const ICONES = {
   home:'<path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/>',
   list:'<path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.5" cy="6" r="1"/><circle cx="4.5" cy="12" r="1"/><circle cx="4.5" cy="18" r="1"/>',
@@ -293,8 +333,7 @@ const ICONES = {
   health:'<rect x="3" y="3" width="18" height="18" rx="5"/><path d="M12 8v8M8 12h8"/>',
   phone:'<rect x="6" y="2" width="12" height="20" rx="3"/><path d="M11 18h2"/>',
   copy:'<rect x="8" y="8" width="13" height="13" rx="2.5"/><path d="M16 8V5.5A2.5 2.5 0 0 0 13.5 3h-8A2.5 2.5 0 0 0 3 5.5v8A2.5 2.5 0 0 0 5.5 16H8"/>',
-  trash:'<path d="M3 6h18M8 6V4h8v2M6 6l1 14a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-14"/>',
-  calendar:'<rect x="3" y="4.5" width="18" height="16.5" rx="2.5"/><path d="M3 9.5h18M8 2.5v4M16 2.5v4"/>'
+  trash:'<path d="M3 6h18M8 6V4h8v2M6 6l1 14a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-14"/>'
 };
 const ic = (n, s = 20, w = 1.9) => `<svg class="ico" viewBox="0 0 24 24" width="${s}" height="${s}" fill="none" stroke="currentColor" stroke-width="${w}" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONES[n] || ''}</svg>`;
 const CAT_VISUAL = {
@@ -306,29 +345,34 @@ const CAT_VISUAL = {
 const corCat = c => (CAT_VISUAL[c] || ['box','#94a3b8'])[1];
 const avatar = c => { const [i, cor] = CAT_VISUAL[c] || ['box','#94a3b8']; return `<span class="av" style="--c:${cor}">${ic(i, 19)}</span>`; };
 
-/* ---------------- estado ---------------- */
+/* ============================== estado ============================== */
 const S = {
-  mode: null,           // 'graph' | 'demo'
-  rows: [],             // lançamentos preenchidos
-  emptyRows: [],        // linhas vazias dentro da tabela (onde novos lançamentos entram)
+  mode: null,            // 'graph' | 'demo'
+  mesMin: '',            // primeiro mês exibido (INICIO_CONTROLE com a planilha real)
+  rows: [],              // lançamentos preenchidos (+ os guardados offline, com row negativo)
+  emptyRows: [],         // linhas vazias da tabela, onde novos lançamentos entram
   sheetName: 'Timeline',
+  col: { status:'F', obs:'I', rec:null }, // letras das colunas fora do bloco A–G, lidas pelo cabeçalho
   tab: lsGet('cf_tab') || 'home',
   mes: ym(today()),
   busca: '', filtroCat: '',
   loading: false,
-  limites: {}, limitesRow: {}, limitesOk: false,   // aba "Limites" da planilha
-  offlineDesde: null,                             // quando está mostrando dados guardados no aparelho
+  limites: {}, limitesRow: {},   // aba "Limites": valor por categoria e linha de cada categoria
+  offlineDesde: null,            // mostrando a cópia guardada no aparelho (sem internet)
+  fila: lerFila(),               // lançamentos feitos sem internet, aguardando envio
+  _calc: null, _resumo: new Map(), _meses: null // derivados, recalculados a cada render
 };
 let charts = {};
+const linha = row => S.rows.find(r => r.row === row);
+const temAbaLimites = () => Object.keys(S.limitesRow).length > 0;
 
-/* ---------------- Microsoft Graph ---------------- */
-let msalApp = null, itemId = null;
+/* ============================== Microsoft Graph ============================== */
+let msalApp = null, itemId = lsGet('cf_itemId');
 const SCOPES = ['Files.ReadWrite'];
-function clientId(){ return CLIENT_ID || lsGet('cf_clientId') || ''; }
 
 async function initMsal(){
   msalApp = new msal.PublicClientApplication({
-    auth:{ clientId: clientId(), authority:'https://login.microsoftonline.com/consumers', redirectUri: location.origin + location.pathname },
+    auth:{ clientId: CLIENT_ID, authority:'https://login.microsoftonline.com/consumers', redirectUri: location.origin + location.pathname },
     cache:{ cacheLocation:'localStorage' }
   });
   await msalApp.initialize();
@@ -357,289 +401,319 @@ async function graph(method, path, body, tentativa=0){
     });
   } catch(e){ throw erroOffline(); }
   if ((r.status === 429 || r.status >= 500) && tentativa < 2){ await new Promise(ok=>setTimeout(ok, 1200*(tentativa+1))); return graph(method, path, body, tentativa+1); }
-  if (!r.ok){ let m = r.status + ''; try{ const j = await r.json(); m = j.error?.message || m; }catch(e){} throw new Error(m); }
+  if (!r.ok){ let m = r.status + ''; try{ const j = await r.json(); m = j.error?.message || m; }catch(e){} throw Object.assign(new Error(m), { status: r.status }); }
   return r.status === 204 ? null : r.json();
 }
 async function getItemId(){
   if (itemId) return itemId;
   const p = FILE_PATH.split('/').map(encodeURIComponent).join('/');
   itemId = (await graph('GET', `/me/drive/root:${p}?$select=id`)).id;
+  lsSet('cf_itemId', itemId);
   return itemId;
 }
 const wb = async () => `/me/drive/items/${await getItemId()}/workbook`;
+const ws = async (nome = S.sheetName) => `${await wb()}/worksheets('${encodeURIComponent(nome)}')`;
+const letra = i => String.fromCharCode(65 + i);
 
-/* Lê a Tabela1 inteira e separa linhas preenchidas e vazias */
-async function carregarGraph(){
+/* Lê a Tabela1: separa linhas preenchidas e vazias e descobre as colunas pelo cabeçalho */
+async function carregarTabela(){
   const res = await graph('GET', `${await wb()}/tables('${TABLE_NAME}')/range?$select=address,values`);
   const [sheet, ref] = res.address.split('!');
   S.sheetName = sheet.replace(/^'|'$/g,'');
   const firstRow = parseInt(ref.match(/\d+/)[0], 10);
-  const vals = res.values;
-  const head = vals[0].map(h => String(h).trim());
+  const head = res.values[0].map(h => String(h).trim());
   const ix = n => head.indexOf(n);
   const c = { data:ix('Data'), desc:ix('Descrição'), cat:ix('Categoria'), tipo:ix('Tipo'), forma:ix('Forma'), status:ix('Status'), valor:ix('Valor'), obs:ix('Obs'), rec:ix('Recorrência') };
-  S.colRec = c.rec >= 0 ? String.fromCharCode(65 + c.rec) : null; // letra da coluna "Recorrência" (K)
-  if (c.data !== 0 || c.valor !== 6 || c.obs !== 8) throw new Error('A estrutura da Tabela1 mudou (colunas esperadas: Data…Valor em A–G, Obs em I).');
+  // Data…Valor precisam estar juntas em A–G (são gravadas num bloco só); Obs e Recorrência são achadas pelo nome
+  if (!ref.startsWith('A') || [c.data, c.desc, c.cat, c.tipo, c.forma, c.status, c.valor].some((v, i) => v !== i) || c.obs < 0)
+    throw new Error('A estrutura da Tabela1 mudou: esperava Data, Descrição, Categoria, Tipo, Forma, Status e Valor em A–G, e uma coluna Obs.');
+  S.col = { status: letra(c.status), obs: letra(c.obs), rec: c.rec >= 0 ? letra(c.rec) : null };
   const rows = [], empty = [];
-  for (let i = 1; i < vals.length; i++){
-    const v = vals[i], rowNum = firstRow + i;
-    const vazio = v[c.data] === '' && v[c.desc] === '' && v[c.valor] === '';
-    if (vazio){ empty.push(rowNum); continue; }
+  res.values.slice(1).forEach((v, i) => {
+    const rowNum = firstRow + i + 1;
+    if (v[c.data] === '' && v[c.desc] === '' && v[c.valor] === ''){ empty.push(rowNum); return; }
     rows.push({
       row: rowNum,
       data: typeof v[c.data] === 'number' ? serialToIso(v[c.data]) : '',
-      desc: String(v[c.desc]), cat: String(v[c.cat]), tipo: String(v[c.tipo]), forma: String(v[c.forma]),
-      status: String(v[c.status]), valor: Number(v[c.valor]) || 0, obs: String(v[c.obs] ?? ''),
-      rec: c.rec >= 0 ? String(v[c.rec] ?? '') : ''
+      desc: String(v[c.desc]), cat: String(v[c.cat]),
+      tipo: String(v[c.tipo]) === 'Saida' ? 'Saída' : String(v[c.tipo]), // normaliza grafia antiga uma vez só
+      forma: String(v[c.forma]), status: String(v[c.status]), valor: Number(v[c.valor]) || 0,
+      obs: String(v[c.obs] ?? ''), rec: c.rec >= 0 ? String(v[c.rec] ?? '') : ''
     });
-  }
+  });
   S.rows = rows; S.emptyRows = empty;
-  await carregarLimites();
-  S.offlineDesde = null;
-  lsSet('cf_cache', JSON.stringify({ t: Date.now(), rows, emptyRows: empty, sheetName: S.sheetName, limites: S.limites, limitesRow: S.limitesRow }));
   aplicarFila();
 }
-/* Grava vários lançamentos novos nas primeiras linhas vazias (em blocos contínuos) */
-async function gravarVarias(lista){
-  await carregarGraph(); // estado mais recente, para não sobrescrever nada
-  if (S.emptyRows.length < lista.length) throw new Error(`A Tabela1 só tem ${S.emptyRows.length} linha(s) livre(s). Abra a planilha e aumente a tabela (arraste o canto inferior).`);
-  const alvo = S.emptyRows.slice(0, lista.length);
-  const base = `${await wb()}/worksheets('${encodeURIComponent(S.sheetName)}')`;
-  for (let i = 0; i < alvo.length; ){
-    let j = i; while (j + 1 < alvo.length && alvo[j+1] === alvo[j] + 1) j++;
-    const parte = lista.slice(i, j + 1), ini = alvo[i], fim = alvo[j];
-    await graph('PATCH', `${base}/range(address='A${ini}:G${fim}')`, { values: parte.map(l => linhaParaValores(l)[0]) });
-    if (parte.some(l => l.obs)) await graph('PATCH', `${base}/range(address='I${ini}:I${fim}')`, { values: parte.map(l => [l.obs || '']) });
-    if (S.colRec && parte.some(l => l.rec)) await graph('PATCH', `${base}/range(address='${S.colRec}${ini}:${S.colRec}${fim}')`, { values: parte.map(l => [l.rec || '']) });
-    i = j + 1;
-  }
-  await carregarGraph();
-}
-
-/* ---------------- limites por categoria (aba "Limites") ---------------- */
-const CATS_LIMITE = CATEGORIAS.filter(c => !['Renda','Investimento','Cartão'].includes(c));
 async function carregarLimites(){
   try {
-    const res = await graph('GET', `${await wb()}/worksheets('Limites')/range(address='A1:B60')?$select=values`);
+    const res = await graph('GET', `${await ws('Limites')}/range(address='A1:B60')?$select=values`);
     const lim = {}, pos = {};
     res.values.forEach((v, i) => {
       const c = String(v[0]).trim(); if (i === 0 || !c) return;
       pos[c] = i + 1; const n = Number(v[1]); if (v[1] !== '' && n > 0) lim[c] = n;
     });
-    S.limites = lim; S.limitesRow = pos; S.limitesOk = true;
-  } catch(e){ if (isOffline(e)) throw e; S.limites = {}; S.limitesRow = {}; S.limitesOk = false; }
+    S.limites = lim; S.limitesRow = pos;
+  } catch(e){ if (isOffline(e)) throw e; S.limites = {}; S.limitesRow = {}; } // aba ainda não existe
 }
+/* Carrega tabela e limites em paralelo; se o arquivo mudou de lugar, esquece o id guardado e tenta de novo */
+async function carregarTudo(){
+  try { await Promise.all([carregarTabela(), carregarLimites()]); }
+  catch(e){
+    if (e.status !== 404 || !lsGet('cf_itemId')) throw e;
+    itemId = null; lsSet('cf_itemId', null);
+    await Promise.all([carregarTabela(), carregarLimites()]);
+  }
+  S.offlineDesde = null;
+  salvarCache();
+}
+
+/* Cópia local para abrir sem internet */
+function salvarCache(){
+  if (S.mode !== 'graph') return;
+  const { sheetName, col, emptyRows, limites, limitesRow } = S;
+  lsSet('cf_cache', JSON.stringify({ t: Date.now(), rows: S.rows.filter(r => !r.pendente), emptyRows, sheetName, col, limites, limitesRow }));
+}
+function restaurarCache(){
+  let c = null; try { c = JSON.parse(lsGet('cf_cache')); } catch(e){}
+  if (!c) return null;
+  Object.assign(S, { rows: c.rows, emptyRows: c.emptyRows, sheetName: c.sheetName, col: c.col || S.col, limites: c.limites || {}, limitesRow: c.limitesRow || {} });
+  aplicarFila();
+  return c.t;
+}
+
+/* Escreve linhas contíguas a partir de "ini" (A–G, Obs e Recorrência). null = esvaziar a linha. */
+async function escreverLinhas(ini, linhas, { novas = false } = {}){
+  const fim = ini + linhas.length - 1, base = await ws();
+  const faixa = (col, f) => graph('PATCH', `${base}/range(address='${col}${ini}:${col}${fim}')`, { values: linhas.map(f) });
+  await graph('PATCH', `${base}/range(address='A${ini}:G${fim}')`, {
+    values: linhas.map(l => l ? [isoToSerial(l.data), l.desc, l.cat, l.tipo, l.forma, l.status, l.valor] : Array(7).fill(''))
+  });
+  // linhas novas já estão vazias: só grava Obs/Recorrência se houver algo
+  if (!novas || linhas.some(l => l?.obs)) await faixa(S.col.obs, l => [l?.obs || '']);
+  if (S.col.rec && (!novas || linhas.some(l => l?.rec))) await faixa(S.col.rec, l => [l?.rec || '']);
+}
+
+/* ---- onde os dados são gravados: planilha (graph) ou memória (demo). As telas só chamam db().x() ---- */
+const store = {
+  graph: {
+    async inserir(lista, { fresco = false } = {}){
+      if (!fresco) await carregarTabela(); // estado mais recente: não sobrescrever nada que mudou no Excel
+      if (S.emptyRows.length < lista.length) throw new Error(`A Tabela1 só tem ${S.emptyRows.length} linha(s) livre(s). Abra a planilha e aumente a tabela (arraste o canto inferior).`);
+      const alvo = S.emptyRows.slice(0, lista.length);
+      for (let i = 0; i < alvo.length; ){
+        let j = i; while (j + 1 < alvo.length && alvo[j+1] === alvo[j] + 1) j++;
+        await escreverLinhas(alvo[i], lista.slice(i, j + 1), { novas: true });
+        i = j + 1;
+      }
+      // atualiza a memória sem reler a planilha
+      lista.forEach((l, i) => S.rows.push({ ...l, row: alvo[i] }));
+      S.emptyRows = S.emptyRows.slice(lista.length);
+      salvarCache();
+    },
+    async atualizar(row, l){ await escreverLinhas(row, [l]); Object.assign(linha(row), l, { row }); salvarCache(); },
+    async limpar(row){
+      await escreverLinhas(row, [null]);
+      S.rows = S.rows.filter(r => r.row !== row); S.emptyRows = [...S.emptyRows, row].sort((a, b) => a - b); salvarCache();
+    },
+    async marcarPago(row){ await graph('PATCH', `${await ws()}/range(address='${S.col.status}${row}')`, { values: [['Pago']] }); linha(row).status = 'Pago'; salvarCache(); },
+    async salvarLimites(valores){ // { categoria: número ou '' }
+      const linhas = Object.values(S.limitesRow);
+      const ini = Math.min(...linhas), fim = Math.max(...linhas);
+      const catDaLinha = Object.fromEntries(Object.entries(S.limitesRow).map(([c, r]) => [r, c]));
+      const values = [];
+      for (let r = ini; r <= fim; r++){ const c = catDaLinha[r]; values.push([c in valores ? valores[c] : (S.limites[c] || '')]); }
+      await graph('PATCH', `${await ws('Limites')}/range(address='B${ini}:B${fim}')`, { values });
+      Object.entries(valores).forEach(([c, v]) => { if (v > 0) S.limites[c] = v; else delete S.limites[c]; });
+      salvarCache();
+    }
+  },
+  demo: {
+    async inserir(lista){ let m = Math.max(1, ...S.rows.map(r => r.row)); lista.forEach(l => S.rows.push({ ...l, row: ++m })); },
+    async atualizar(row, l){ Object.assign(linha(row), l, { row }); },
+    async limpar(row){ S.rows = S.rows.filter(r => r.row !== row); },
+    async marcarPago(row){ linha(row).status = 'Pago'; },
+    async salvarLimites(valores){ S.limites = Object.fromEntries(Object.entries(valores).filter(([, v]) => v > 0)); }
+  }
+};
+const db = () => store[S.mode];
+
+/* Insere lançamentos novos; sem internet, guarda no aparelho. Retorna true se ficou guardado. */
+async function inserirNovos(lista){
+  try { await db().inserir(lista); return false; }
+  catch(e){
+    if (S.mode !== 'graph' || !isOffline(e)) throw e;
+    S.fila = S.fila.concat(lista); salvarFila(); aplicarFila(); return true;
+  }
+}
+
+/* ---- fila offline ---- */
+function lerFila(){ try { return JSON.parse(lsGet('cf_fila') || '[]'); } catch(e){ return []; } }
+const salvarFila = () => lsSet('cf_fila', S.fila.length ? JSON.stringify(S.fila) : null);
+function aplicarFila(){ S.rows = S.rows.filter(r => !r.pendente).concat(S.fila.map((l, i) => ({ ...l, row: -(i + 1), pendente: true }))); }
+async function enviarFila(fresco = false){
+  const f = S.fila; if (!f.length || S.mode !== 'graph') return;
+  try {
+    S.rows = S.rows.filter(r => !r.pendente); // fora da memória enquanto vão para a planilha
+    await store.graph.inserir(f, { fresco });
+    S.fila = []; salvarFila(); aplicarFila();
+    toast(`${f.length} lançamento(s) guardado(s) enviado(s) para a planilha ✓`); render();
+  } catch(e){ aplicarFila(); if (!isOffline(e)) toast('Erro ao enviar lançamentos guardados: ' + e.message, 5000); }
+}
+
+/* ---- aba "Limites" ---- */
 async function criarAbaLimites(){
-  const w = await wb(), n = CATS_LIMITE.length, fim = n + 1, T = 'Timeline!';
-  await graph('POST', `${w}/worksheets/add`, { name: 'Limites' });
+  const n = CATS_LIMITE.length, fim = n + 1, T = 'Timeline!';
+  await graph('POST', `${await wb()}/worksheets/add`, { name: 'Limites' });
   const mes = `${T}$A$2:$A$581,">="&(EOMONTH(TODAY(),-1)+1),${T}$A$2:$A$581,"<="&EOMONTH(TODAY(),0)`;
   const formulas = [['Categoria','Limite mensal','Previsto no mês atual','Disponível'],
     ...CATS_LIMITE.map((c, i) => { const r = i + 2; return [c, '', `=SUMIFS(${T}$G$2:$G$581,${T}$D$2:$D$581,"Saída",${T}$J$2:$J$581,$A${r},${mes})`, `=IF(B${r}="","",B${r}-C${r})`]; })];
-  const base = `${w}/worksheets('Limites')`;
+  const base = await ws('Limites');
   await graph('PATCH', `${base}/range(address='A1:D${fim}')`, { formulas });
   await graph('PATCH', `${base}/range(address='B2:D${fim}')`, { numberFormat: Array.from({ length: n }, () => Array(3).fill('"R$" #,##0.00')) });
   await graph('PATCH', `${base}/range(address='A1:D1')/format/font`, { bold: true });
   try { await graph('POST', `${base}/range(address='A1:D${fim}')/format/autofitColumns`); } catch(e){}
 }
-async function gravarLimites(valores){ // valores: { categoria: número ou '' }
-  const linhas = Object.values(S.limitesRow); if (!linhas.length) return;
-  const ini = Math.min(...linhas), fim = Math.max(...linhas);
-  const porLinha = Object.fromEntries(Object.entries(S.limitesRow).map(([c, r]) => [r, c]));
-  const values = []; for (let r = ini; r <= fim; r++){ const c = porLinha[r]; values.push([c && valores[c] !== undefined ? valores[c] : (c && S.limites[c] ? S.limites[c] : '')]); }
-  await graph('PATCH', `${await wb()}/worksheets('Limites')/range(address='B${ini}:B${fim}')`, { values });
-  await carregarLimites();
-}
 
-/* ---------------- fila offline ---------------- */
-const fila = () => { try { return JSON.parse(lsGet('cf_fila') || '[]'); } catch(e){ return []; } };
-const setFila = f => lsSet('cf_fila', f.length ? JSON.stringify(f) : null);
-function aplicarFila(){ S.rows = S.rows.filter(r => !r.pendente).concat(fila().map((l, i) => ({ ...l, row: -(i + 1), pendente: true }))); }
-async function enviarFila(){
-  const f = fila(); if (!f.length || S.mode !== 'graph') return;
-  try {
-    await gravarVarias(f); setFila([]); aplicarFila();
-    toast(`${f.length} lançamento(s) guardado(s) enviado(s) para a planilha ✓`); render();
-  } catch(e){ if (!isOffline(e)) toast('Erro ao enviar lançamentos guardados: ' + e.message, 5000); }
-}
-/* Insere lançamentos novos; sem internet, guarda no aparelho. Retorna true se ficou guardado. */
-async function inserirNovos(lista){
-  if (S.mode !== 'graph'){ let m = Math.max(1, ...S.rows.map(r => r.row)); lista.forEach(l => S.rows.push({ row: ++m, ...l })); return false; }
-  try { await gravarVarias(lista); return false; }
-  catch(e){ if (!isOffline(e)) throw e; setFila(fila().concat(lista)); aplicarFila(); return true; }
-}
-function addMesesData(iso, k){
-  const [y, m, d] = iso.split('-').map(Number);
-  const ult = new Date(y, m - 1 + k + 1, 0).getDate();
-  return isoLocal(new Date(y, m - 1 + k, Math.min(d, ult)));
-}
-function linhaParaValores(l){ return [[ isoToSerial(l.data), l.desc, l.cat, l.tipo, l.forma, l.status, l.valor ]]; }
-async function gravarLinha(rowNum, l){
-  const base = `${await wb()}/worksheets('${encodeURIComponent(S.sheetName)}')`;
-  await graph('PATCH', `${base}/range(address='A${rowNum}:G${rowNum}')`, { values: linhaParaValores(l) });
-  await graph('PATCH', `${base}/range(address='I${rowNum}')`, { values: [[ l.obs || '' ]] });
-  if (S.colRec) await graph('PATCH', `${base}/range(address='${S.colRec}${rowNum}')`, { values: [[ l.rec || '' ]] });
-}
-async function limparLinha(rowNum){
-  const base = `${await wb()}/worksheets('${encodeURIComponent(S.sheetName)}')`;
-  await graph('PATCH', `${base}/range(address='A${rowNum}:G${rowNum}')`, { values: [['','','','','','','']] });
-  await graph('PATCH', `${base}/range(address='I${rowNum}')`, { values: [['']] });
-  if (S.colRec) await graph('PATCH', `${base}/range(address='${S.colRec}${rowNum}')`, { values: [['']] });
-}
-
-/* ---------------- modo demonstração (dados fictícios) ---------------- */
+/* ============================== modo demonstração ============================== */
 function dadosDemo(){
-  const t = new Date(); const y = t.getFullYear(), m = t.getMonth();
-  const d = (mo, dia) => isoLocal(new Date(y, m+mo, dia));
+  const t = new Date(), d = (mo, dia) => isoLocal(new Date(t.getFullYear(), t.getMonth() + mo, dia));
+  const FIXOS = [ // dia, descrição, categoria, tipo, forma, valor
+    [5,'Salário','Renda','Entrada','Conta',8000], [7,'Aluguel','Moradia','Saída','Débito',1800], [7,'Condomínio','Moradia','Saída','Débito',450],
+    [8,'Supermercado','Alimentação','Saída','Débito',1200], [10,'Internet','Telefonia','Saída','Débito',120], [12,'Streaming','Assinaturas','Saída','Cartão',55.9],
+    [14,'Investimento','Investimento','Investimento','Conta',1000], [16,'Restaurante','Lazer','Saída','Cartão',180], [20,'Combustível','Combustível','Saída','Débito',250],
+    [25,'Farmácia','Saúde','Saída','Débito',90]
+  ];
   const base = [];
-  for (const mo of [-2,-1,0,1]){
-    const st = (dt) => dt <= today() ? 'Pago' : 'Programado';
-    base.push({data:d(mo,5),desc:'Salário',cat:'Renda',tipo:'Entrada',forma:'Conta',valor:8000});
-    base.push({data:d(mo,7),desc:'Aluguel',cat:'Moradia',tipo:'Saída',forma:'Débito',valor:1800});
-    base.push({data:d(mo,7),desc:'Condomínio',cat:'Moradia',tipo:'Saída',forma:'Débito',valor:450});
-    base.push({data:d(mo,8),desc:'Supermercado',cat:'Alimentação',tipo:'Saída',forma:'Débito',valor:1200});
-    base.push({data:d(mo,10),desc:'Internet',cat:'Telefonia',tipo:'Saída',forma:'Débito',valor:120});
-    base.push({data:d(mo,12),desc:'Streaming',cat:'Assinaturas',tipo:'Saída',forma:'Cartão',valor:55.9});
-    base.push({data:d(mo,14),desc:'Investimento',cat:'Investimento',tipo:'Investimento',forma:'Conta',valor:1000});
-    base.push({data:d(mo,16),desc:'Restaurante',cat:'Lazer',tipo:'Saída',forma:'Cartão',valor:180});
-    base.push({data:d(mo,20),desc:'Combustível',cat:'Combustível',tipo:'Saída',forma:'Débito',valor:250});
-    base.push({data:d(mo,25),desc:'Farmácia',cat:'Saúde',tipo:'Saída',forma:'Débito',valor:90});
-    base.forEach(r => { if (!r.status) r.status = st(r.data); });
-  }
-  base.push({data:d(1,18),desc:'Lazer',cat:'Lazer',tipo:'Saída',forma:'Débito',valor:300,status:'Previsão'});
-  base.push({data:ultimoDiaMes(ym(today())),desc:'Feira e açougue',cat:'Alimentação',tipo:'Saída',forma:'Débito',valor:600,status:'Previsão'});
-  base.push({data:ultimoDiaMes(ym(today())),desc:'Lazer do mês',cat:'Lazer',tipo:'Saída',forma:'Débito',valor:250,status:'Previsão'});
-  return base.map((r,i) => ({ row:i+2, obs:'', ...r }));
+  for (const mo of [-2,-1,0,1]) for (const [dia, desc, cat, tipo, forma, valor] of FIXOS){ const data = d(mo, dia); base.push({ data, desc, cat, tipo, forma, valor, status: statusPorData(data) }); }
+  const fimMes = ultimoDiaMes(ym(today()));
+  base.push({ data:d(1,18), desc:'Lazer', cat:'Lazer', tipo:'Saída', forma:'Débito', valor:300, status:'Previsão' });
+  base.push({ data:fimMes, desc:'Feira e açougue', cat:'Alimentação', tipo:'Saída', forma:'Débito', valor:600, status:'Previsão' });
+  base.push({ data:fimMes, desc:'Lazer do mês', cat:'Lazer', tipo:'Saída', forma:'Débito', valor:250, status:'Previsão' });
+  return base.map((r, i) => ({ row: i + 2, obs: '', rec: '', ...r }));
 }
 
-/* ---------------- cálculos (mesmas regras do Dashboard) ---------------- */
+/* ============================== cálculos (mesmas regras do Dashboard) ============================== */
 function calcular(){
   const hoje = today();
   const validos = S.rows.filter(r => r.data);
-  // saldo projetado: ordem por data e, no mesmo dia, pela ordem da linha
-  const ord = [...validos].sort((a,b) => a.data === b.data ? a.row - b.row : (a.data < b.data ? -1 : 1));
+  const ord = [...validos].sort(porData);   // saldo projetado: por data e, no mesmo dia, pela linha
   let acc = 0;
   for (const r of ord){ if (r.status !== 'Marco zero') acc += sinal(r.tipo) * r.valor; r.saldo = Math.round(acc*100)/100; }
-  const conta = validos.filter(r => r.data <= hoje && r.status !== 'Marco zero');
-  const saldoHoje = conta.filter(r => r.forma !== 'Dinheiro').reduce((s,r) => s + sinal(r.tipo)*r.valor, 0);
-  const dinheiro = conta.filter(r => r.forma === 'Dinheiro').reduce((s,r) => s + sinal(r.tipo)*r.valor, 0);
-  const investido = validos.filter(r => r.tipo === 'Investimento').reduce((s,r)=>s+r.valor,0) - validos.filter(r => r.tipo === 'Retirada').reduce((s,r)=>s+r.valor,0);
-  const futuros = ord.filter(r => r.data >= hoje);
+  const saldoDe = rs => rs.reduce((s, r) => s + sinal(r.tipo) * r.valor, 0);
+  const dinheiro = saldoDe(validos.filter(r => r.data <= hoje && r.status !== 'Marco zero' && r.forma === 'Dinheiro'));
+  const investido = soma(validos.filter(r => r.tipo === 'Investimento')) - soma(validos.filter(r => r.tipo === 'Retirada'));
   let menor = null;
-  for (const r of futuros) if (!menor || r.saldo < menor.saldo) menor = r;
+  for (const r of ord) if (r.data >= hoje && (!menor || r.saldo < menor.saldo)) menor = r;
   const proxSal = ord.find(r => r.desc === 'Salário' && r.data > hoje);
   // saldo real: só o que está marcado como Pago (o que de fato já saiu/entrou na conta)
-  const saldoReal = validos.filter(r => r.status === 'Pago' && r.forma !== 'Dinheiro').reduce((s,r) => s + sinal(r.tipo)*r.valor, 0);
+  const saldoReal = saldoDe(validos.filter(r => r.status === 'Pago' && r.forma !== 'Dinheiro'));
   // projetado para o fim do mês: inclui programados e previsões até o último dia do mês
   const fimMes = ultimoDiaMes(ym(hoje)), ateFim = ord.filter(r => r.data <= fimMes);
   const saldoFimMes = ateFim.length ? ateFim[ateFim.length - 1].saldo : null;
-  return { ord, saldoHoje, saldoReal, saldoFimMes, fimMes, dinheiro, investido, patrimonio: saldoReal + investido + dinheiro, menor, proxSal };
+  return { ord, saldoReal, saldoFimMes, fimMes, dinheiro, investido, patrimonio: saldoReal + investido + dinheiro, menor, proxSal };
 }
 function resumoMes(mes){
-  const rs = S.rows.filter(r => r.data && ym(r.data) === mes);
-  const ent = rs.filter(r => r.tipo === 'Entrada' || r.tipo === 'Retirada').reduce((s,r)=>s+r.valor,0);
-  const sai = rs.filter(r => normTipo(r.tipo) === 'Saída').reduce((s,r)=>s+r.valor,0);
-  const inv = rs.filter(r => r.tipo === 'Investimento').reduce((s,r)=>s+r.valor,0);
-  const cartao = rs.filter(r => normTipo(r.tipo) === 'Saída' && r.forma === 'Cartão').reduce((s,r)=>s+r.valor,0);
-  const porCat = {};
-  rs.filter(r => normTipo(r.tipo) === 'Saída').forEach(r => porCat[r.cat] = (porCat[r.cat]||0) + r.valor);
-  const pendente = rs.filter(r => normTipo(r.tipo) === 'Saída' && r.status !== 'Pago').reduce((s,r)=>s+r.valor,0);
-  const saldos = rs.filter(r => r.saldo != null);
-  const menor = saldos.length ? saldos.reduce((a,b) => b.saldo < a.saldo ? b : a) : null;
-  return { rs, ent, sai, inv, cartao, porCat, pendente, menor };
+  if (S._resumo.has(mes)) return S._resumo.get(mes);
+  const rs = S.rows.filter(r => r.data && ym(r.data) === mes), sai = rs.filter(r => r.tipo === 'Saída');
+  const porCat = {}; sai.forEach(r => porCat[r.cat] = (porCat[r.cat] || 0) + r.valor);
+  const comSaldo = rs.filter(r => r.saldo != null);
+  const res = {
+    ent: soma(rs.filter(r => r.tipo === 'Entrada' || r.tipo === 'Retirada')), sai: soma(sai),
+    inv: soma(rs.filter(r => r.tipo === 'Investimento')), cartao: soma(sai.filter(r => r.forma === 'Cartão')),
+    pendente: soma(sai.filter(r => r.status !== 'Pago')), porCat,
+    menor: comSaldo.length ? comSaldo.reduce((a, b) => b.saldo < a.saldo ? b : a) : null
+  };
+  S._resumo.set(mes, res);
+  return res;
 }
-function mesesComDados(){ return [...new Set(S.rows.filter(r=>r.data).map(r => ym(r.data)))].filter(m => S.mode === 'demo' || m >= INICIO_CONTROLE).sort(); }
-function nomeMes(m){ const [y,mm] = m.split('-').map(Number); return `${MESES_LONGO[mm-1]} ${y}`; }
-function addMes(m, n){ const [y,mm] = m.split('-').map(Number); const d = new Date(y, mm-1+n, 1); return `${d.getFullYear()}-${pad(d.getMonth()+1)}`; }
-/* fatura do cartão e previsões: o usuário escolhe só o mês, o app grava uma data padrão */
-const ultimoDiaMes = m => { const [y, mm] = m.split('-').map(Number); return isoLocal(new Date(y, mm, 0)); };
-const ehUltimoDia = iso => !!iso && iso === ultimoDiaMes(ym(iso));
-const dataFatura = m => `${m}-${pad(CARTAO_VENCIMENTO)}`;
-const faturaSugerida = (iso = today()) => +iso.slice(8, 10) >= CARTAO_MELHOR_DIA ? addMes(ym(iso), 1) : ym(iso);
-const ehCartao = r => r.forma === 'Cartão' && normTipo(r.tipo) === 'Saída';
-const mesCurto = iso => `${MESES[+iso.slice(5, 7) - 1].toLowerCase()}${iso.slice(0, 4) !== String(new Date().getFullYear()) ? '/' + iso.slice(2, 4) : ''}`;
+function mesesComDados(){
+  return S._meses ??= [...new Set(S.rows.filter(r => r.data).map(r => ym(r.data)))].filter(m => m >= S.mesMin).sort();
+}
 
-/* ---------------- renderização ---------------- */
+/* ============================== renderização ============================== */
 function destroyCharts(){ Object.values(charts).forEach(c => c.destroy()); charts = {}; }
 function render(){
   destroyCharts();
+  S._resumo = new Map(); S._meses = null;
   S._calc = calcular(); // também preenche o saldo projetado de cada lançamento
-  const titulos = { home:'Início', lista:'Lançamentos', analise:'Análise' };
-  const hojeTxt = new Date().toLocaleDateString('pt-BR', { weekday:'long', day:'numeric', month:'long' });
-  const tab = (k, i, l) => `<button class="${S.tab===k?'on':''}" onclick="irPara('${k}')" aria-label="${l}">${ic(i, 22, S.tab===k ? 2.2 : 1.8)}${l}</button>`;
-  const navi = (k, i, l) => `<button class="navi ${S.tab===k?'on':''}" onclick="irPara('${k}')">${ic(i, 20, S.tab===k ? 2.2 : 1.8)}${l}</button>`;
+  const hojeTxt = cap(new Date().toLocaleDateString('pt-BR', { weekday:'long', day:'numeric', month:'long' }));
+  const titulo = (NAV.find(([k]) => k === S.tab) || NAV[0])[2];
+  const peso = k => S.tab === k ? 2.2 : 1.8;
+  const banner = (i, txt) => `<div class="demo-banner">${ic(i, 16)} ${txt}</div>`;
   $('#root').innerHTML = `<div class="app">
     <aside class="side">
       <div class="brand"><img src="icon.svg" alt="">Controle Financeiro</div>
       <button class="btn novo" onclick="abrirForm()">${ic('plus', 18, 2.4)}Novo lançamento</button>
-      ${navi('home','home','Início')}${navi('lista','list','Lançamentos')}${navi('analise','chart','Análise')}
+      ${NAV.map(([k, i, l]) => `<button class="navi ${S.tab===k?'on':''}" onclick="irPara('${k}')">${ic(i, 20, peso(k))}${l}</button>`).join('')}
       <button class="navi" onclick="abrirConfig()">${ic('sliders', 20, 1.8)}Ajustes</button>
       <div class="rodape">Lendo e gravando em<br><b>Controle Financeiro.xlsx</b><br>Atalho: <kbd>N</kbd> novo lançamento</div>
     </aside>
     <div class="content">
-    ${S.mode === 'demo' ? `<div class="demo-banner">${ic('alert',16)} Modo demonstração — dados fictícios, nada é gravado na planilha</div>` : ''}
-    ${S.offlineDesde ? `<div class="demo-banner">${ic('wifioff',16)} Sem internet — dados de ${new Date(S.offlineDesde).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}. Novos lançamentos são enviados depois.</div>` : ''}
-    ${fila().length ? `<div class="demo-banner">${ic('clock',16)} ${fila().length} lançamento(s) guardado(s) no aparelho, aguardando internet</div>` : ''}
-    <header class="top"><img class="logo" src="icon.svg" alt=""><h1>${titulos[S.tab]}<small>${hojeTxt.charAt(0).toUpperCase() + hojeTxt.slice(1)}</small></h1>
+    ${S.mode === 'demo' ? banner('alert', 'Modo demonstração — dados fictícios, nada é gravado na planilha') : ''}
+    ${S.offlineDesde ? banner('wifioff', `Sem internet — dados de ${new Date(S.offlineDesde).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}. Novos lançamentos são enviados depois.`) : ''}
+    ${S.fila.length ? banner('clock', `${S.fila.length} lançamento(s) guardado(s) no aparelho, aguardando internet`) : ''}
+    <header class="top"><img class="logo" src="icon.svg" alt=""><h1>${titulo}<small>${hojeTxt}</small></h1>
       <button class="iconbtn" title="Atualizar" aria-label="Atualizar" onclick="recarregar()">${ic('refresh',19)}</button></header>
     <main class="wrap" id="main">${S.loading ? '<div class="center"><div class="spinner"></div></div>' : telas[S.tab]()}</main>
     </div></div>
-    <nav class="tabs">${tab('home','home','Início')}${tab('lista','list','Lançamentos')}
-      <button class="add" onclick="abrirForm()" aria-label="Novo lançamento">${ic('plus', 26, 2.4)}</button>
-      ${tab('analise','chart','Análise')}<button onclick="abrirConfig()" aria-label="Ajustes">${ic('sliders', 22, 1.8)}Ajustes</button></nav>`;
+    <nav class="tabs">${NAV.map(([k, i, l], n) => `${n === 2 ? `<button class="add" onclick="abrirForm()" aria-label="Novo lançamento">${ic('plus', 26, 2.4)}</button>` : ''}
+      <button class="${S.tab===k?'on':''}" onclick="irPara('${k}')" aria-label="${l}">${ic(i, 22, peso(k))}${l}</button>`).join('')}
+      <button onclick="abrirConfig()" aria-label="Ajustes">${ic('sliders', 22, 1.8)}Ajustes</button></nav>`;
   if (!S.loading && posRender[S.tab]) posRender[S.tab]();
 }
 function irPara(t){ S.tab = t; lsSet('cf_tab', t); render(); scrollTo(0,0); }
 
-/* "Fatura dez" para cartão, "Previsto p/ dez" para previsões; senão a data (omitida quando a lista já agrupa por dia) */
+/* ---- itens de lista ---- */
+/* "Fatura dez" (cartão), "Previsto p/ dez" (previsão) ou a data; vazio quando a lista já agrupa por dia */
 function quando(r, semData){
   if (!r.data) return '';
-  if (ehCartao(r)) return `Fatura ${mesCurto(r.data)} · `;
-  if (r.status === 'Previsão') return `Previsto p/ ${mesCurto(r.data)} · `;
-  return semData ? '' : fmtData(r.data) + ' · ';
+  if (ehCartao(r)) return `Fatura ${mesCurto(r.data)}`;
+  if (r.status === 'Previsão') return `Previsto p/ ${mesCurto(r.data)}`;
+  return semData ? '' : fmtData(r.data);
 }
-function itemHTML(r, opts={}){
-  const t = normTipo(r.tipo), s = sinal(r.tipo);
-  const cls = t === 'Investimento' ? 'muted' : (s > 0 ? 'pos' : '');
-  const badge = r.pendente ? `<span class="badge Previsão">${ic('clock',11,2.4)} envio</span>`
-    : (r.status !== 'Pago' ? `<span class="badge ${esc(r.status)}">${esc(r.status)}</span>` : '');
-  return `<li class="item" ${opts.noclick ? 'style="cursor:default"' : `onclick="abrirForm(${r.row})"`}>
+const badgeHTML = r => r.pendente ? `<span class="badge Previsão">${ic('clock',11,2.4)} envio</span>`
+  : r.status !== 'Pago' ? `<span class="badge ${esc(r.status)}">${esc(r.status)}</span>` : '';
+const acaoHTML = r => r.pendente || r.status === 'Pago' ? ''
+  : r.status === 'Previsão' ? `<button class="regbtn" aria-label="Registrar gasto de ${esc(r.desc)}" onclick="event.stopPropagation();abrirRegistro(${r.row})">Registrar</button>`
+  : `<button class="paybtn" title="Marcar como pago" aria-label="Marcar ${esc(r.desc)} como pago" onclick="event.stopPropagation();marcarPago(${r.row})">${ic('check',17,2.4)}</button>`;
+const tituloItem = r => `<div class="d"><span class="tx">${esc(r.desc)}</span>${r.rec === 'Recorrente' ? `<span class="muted" title="Todo mês">${ic('repeat',13,2.2)}</span>` : ''}</div>`;
+function itemHTML(r, { saldo, semData, noclick, pagar } = {}){
+  const s = sinal(r.tipo), cls = r.tipo === 'Investimento' ? 'muted' : (s > 0 ? 'pos' : '');
+  const detalhes = [quando(r, semData), r.cat, r.forma, r.obs].filter(Boolean).map(esc).join(' · ');
+  return `<li class="item" ${noclick ? 'style="cursor:default"' : `onclick="abrirForm(${r.row})"`}>
     ${avatar(r.cat)}
-    <div class="main"><div class="d"><span class="tx">${esc(r.desc)}</span>${r.rec === 'Recorrente' ? `<span class="muted" title="Todo mês">${ic('repeat',13,2.2)}</span>` : ''}</div>
-    ${opts.compacto
-      ? `<div class="s"><b style="color:var(--text);font-weight:650">${fmtBRL(r.valor)}</b> · ${ehCartao(r) ? 'fatura ' + mesCurto(r.data) : esc(r.forma)}</div></div>`
-      : `<div class="s">${badge}${quando(r, opts.semData)}${esc(r.cat)} · ${esc(r.forma)}${r.obs ? ' · ' + esc(r.obs) : ''}</div></div>
-    <div class="val ${cls}">${s > 0 ? '+' : '−'}${fmtBRL(r.valor)}${opts.saldo && r.saldo != null ? `<small>saldo ${fmtBRL(r.saldo)}</small>` : ''}</div>`}
-    ${opts.pagar && r.status === 'Previsão' && !r.pendente ? `<button class="regbtn" aria-label="Registrar gasto de ${esc(r.desc)}" onclick="event.stopPropagation();abrirRegistro(${r.row})">Registrar</button>`
-      : opts.pagar && r.status !== 'Pago' && !r.pendente ? `<button class="paybtn" title="Marcar como pago" aria-label="Marcar ${esc(r.desc)} como pago" onclick="event.stopPropagation();marcarPago(${r.row})">${ic('check',17,2.4)}</button>` : ''}</li>`;
+    <div class="main">${tituloItem(r)}<div class="s">${badgeHTML(r)}${detalhes}</div></div>
+    <div class="val ${cls}">${s > 0 ? '+' : '−'}${fmtBRL(r.valor)}${saldo && r.saldo != null ? `<small>saldo ${fmtBRL(r.saldo)}</small>` : ''}</div>
+    ${pagar ? acaoHTML(r) : ''}</li>`;
 }
+/* versão enxuta (quadro de previsões): valor embaixo do nome, sem rótulo de status */
+const itemCompactoHTML = r => `<li class="item" onclick="abrirForm(${r.row})">${avatar(r.cat)}
+  <div class="main">${tituloItem(r)}<div class="s"><b>${fmtBRL(r.valor)}</b> · ${esc(ehCartao(r) ? quando(r) : r.forma)}</div></div>${acaoHTML(r)}</li>`;
 
+/* ---- telas ---- */
 const telas = {
   home(){
-    const c = S._calc;
-    const m = c.menor;
-    let pill = '';
-    if (m){
-      if (m.saldo < 0) pill = `<span class="pill bad"><i></i>Vai faltar dinheiro em ${fmtData(m.data)}: ${fmtBRL(m.saldo)}</span>`;
-      else if (m.saldo < 500) pill = `<span class="pill warn"><i></i>Margem apertada: ${fmtBRL(m.saldo)} em ${fmtData(m.data)}</span>`;
-      else pill = `<span class="pill"><i></i>Folga ok · menor saldo ${fmtBRL(m.saldo)} em ${fmtData(m.data)}</span>`;
-    }
-    const hoje = today(), lim = isoLocal(new Date(Date.now() + 21*864e5));
-    const proximos = c.ord.filter(r => r.status !== 'Pago' && r.status !== 'Marco zero' && r.status !== 'Previsão' && r.data <= lim);
-    // previsões do mês atual (e de meses anteriores que ficaram sem registro)
-    const prevs = c.ord.filter(r => r.status === 'Previsão' && r.data && ym(r.data) <= ym(hoje));
-    const totPrevMes = prevs.reduce((s, r) => s + r.valor, 0);
-    const prevCard = prevs.length ? `<div class="card"><div class="h2row"><h2>Previsões do mês</h2><span class="sub">${fmtBRL(totPrevMes)} a gastar</span></div>
-      <ul class="list">${prevs.map(r => itemHTML(r, { pagar: true, compacto: true })).join('')}</ul>
-      <div class="small muted" style="margin-top:8px">Toque em Registrar quando gastar: informe o valor real e, se foi só uma parte, o restante continua previsto.</div></div>` : '';
+    const c = S._calc, m = c.menor, hoje = today();
+    const pill = !m ? ''
+      : m.saldo < 0 ? `<span class="pill bad"><i></i>Vai faltar dinheiro em ${fmtData(m.data)}: ${fmtBRL(m.saldo)}</span>`
+      : m.saldo < 500 ? `<span class="pill warn"><i></i>Margem apertada: ${fmtBRL(m.saldo)} em ${fmtData(m.data)}</span>`
+      : `<span class="pill"><i></i>Folga ok · menor saldo ${fmtBRL(m.saldo)} em ${fmtData(m.data)}</span>`;
+    const lim = isoLocal(new Date(Date.now() + 21*864e5));
+    const proximos = c.ord.filter(r => !['Pago','Marco zero','Previsão'].includes(r.status) && r.data <= lim);
     const atrasados = proximos.filter(r => r.data < hoje);
+    // previsões do mês atual (e de meses anteriores que ficaram sem registro)
+    const prevs = c.ord.filter(r => r.status === 'Previsão' && ym(r.data) <= ym(hoje));
+    const prevCard = prevs.length ? `<div class="card"><div class="h2row"><h2>Previsões do mês</h2><span class="sub">${fmtBRL(soma(prevs))} a gastar</span></div>
+      <ul class="list">${prevs.map(itemCompactoHTML).join('')}</ul>
+      <div class="small muted" style="margin-top:8px">Toque em Registrar quando gastar: informe o valor real e, se foi só uma parte, o restante continua previsto.</div></div>` : '';
     const dias = c.proxSal ? Math.round((new Date(c.proxSal.data+'T00:00') - new Date(hoje+'T00:00'))/864e5) : null;
     const previstos = {};
-    if (c.proxSal) c.ord.filter(r => normTipo(r.tipo)==='Saída' && r.status!=='Pago' && r.data < c.proxSal.data).forEach(r => previstos[r.cat] = (previstos[r.cat]||0)+r.valor);
-    const totPrev = Object.values(previstos).reduce((a,b)=>a+b,0);
+    if (c.proxSal) c.ord.filter(r => r.tipo === 'Saída' && r.status !== 'Pago' && r.data < c.proxSal.data).forEach(r => previstos[r.cat] = (previstos[r.cat]||0) + r.valor);
+    const totPrev = Object.values(previstos).reduce((a,b) => a+b, 0);
     const gastoMes = resumoMes(ym(hoje)).porCat;
-    const perto = Object.entries(S.limites || {}).filter(([c, L]) => (gastoMes[c] || 0) >= 0.9 * L);
+    const perto = Object.entries(S.limites).filter(([cat, L]) => (gastoMes[cat] || 0) >= 0.9 * L);
     const limCard = perto.length ? `<div class="card"><div class="h2row"><h2>Limites do mês</h2><button class="btn sec sm" onclick="abrirLimites()">${ic('target',15)}Editar</button></div>
-      <div class="bars">${barrasLimite(Object.fromEntries(perto.map(([c]) => [c, gastoMes[c] || 0])), Object.fromEntries(perto))}</div>
+      <div class="bars">${barras(Object.fromEntries(perto.map(([cat]) => [cat, gastoMes[cat] || 0])), Object.fromEntries(perto))}</div>
       <div class="small muted" style="margin-top:10px">Categorias com 90% ou mais do limite, incluindo o que está programado no mês.</div></div>` : '';
     return `<div class="dash"><div class="col-a">
     <section class="hero">
@@ -660,40 +734,28 @@ const telas = {
       <div class="chartbox"><canvas id="chSaldo"></canvas></div></div>
     </div><div class="col-b">
     <div class="card"><div class="h2row"><h2>Próximas 3 semanas</h2><span class="sub">${proximos.length} pendente(s)</span></div>
-      ${atrasados.length ? `<div class="alert bad">${ic('alert',18)}<span>${atrasados.length} lançamento(s) com data passada ainda não marcado(s) como pago</span></div>` : ''}
-      ${proximos.length ? `<ul class="list">${proximos.map(r => itemHTML(r,{pagar:true})).join('')}</ul>` : '<div class="empty">Nada pendente nas próximas 3 semanas.</div>'}</div>
+      ${atrasados.length ? `<div class="alert">${ic('alert',18)}<span>${atrasados.length} lançamento(s) com data passada ainda não marcado(s) como pago</span></div>` : ''}
+      ${proximos.length ? `<ul class="list">${proximos.map(r => itemHTML(r, { pagar:true })).join('')}</ul>` : '<div class="empty">Nada pendente nas próximas 3 semanas.</div>'}</div>
     ${totPrev ? `<div class="card"><div class="h2row"><h2>Ainda previsto até o salário</h2><span class="sub">${fmtBRL(totPrev)}</span></div><div class="bars">${barras(previstos)}</div></div>` : ''}
     </div></div>`;
   },
   lista(){
-    const mes = S.mes;
-    const q = S.busca.trim().toLowerCase();
-    let rs = q ? S.rows.filter(r => (r.desc+' '+r.cat+' '+r.obs).toLowerCase().includes(q)) : S.rows.filter(r => r.data && ym(r.data) === mes);
-    if (S.filtroCat) rs = rs.filter(r => r.cat === S.filtroCat);
-    rs = [...rs].sort((a,b) => a.data === b.data ? b.row - a.row : (a.data < b.data ? 1 : -1));
-    const grupos = {}; rs.forEach(r => (grupos[r.data] = grupos[r.data] || []).push(r));
-    const cats = [...new Set(S.rows.map(r=>r.cat).filter(Boolean))].sort();
-    const rm = resumoMes(mes);
+    const mes = S.mes, rm = resumoMes(mes);
+    const cats = [...new Set(S.rows.map(r => r.cat).filter(Boolean))].sort();
+    const chip = (c, nome) => `<span class="chip ${S.filtroCat===c?'on':''}" onclick="S.filtroCat='${esc(c)}';render()">${esc(nome)}</span>`;
     return `<div class="dash lista"><div class="col-a">
-    ${q ? '' : `${navMes(mes)}
+    ${S.busca.trim() ? '' : `${navMes(mes)}
     <div class="kpis" style="grid-template-columns:1fr 1fr">
       <div class="kpi"><div class="l">Entradas</div><div class="v pos">${fmtBRL(rm.ent)}</div></div>
       <div class="kpi"><div class="l">Saídas</div><div class="v">${fmtBRL(rm.sai)}</div></div>
     </div>
-    <button class="btn sec block" style="margin-bottom:12px" onclick="abrirProgramar(S.mes)">${ic('repeat',17)}Programar ${MESES_LONGO[+addMes(mes,1).slice(5)-1].toLowerCase()}</button>`}
-    <div class="searchbox">${ic('search',18)}<input class="i" id="busca" placeholder="Buscar em todos os meses" value="${esc(S.busca)}" oninput="S.busca=this.value;renderLista()"></div>
-    <div class="chips"><span class="chip ${!S.filtroCat?'on':''}" onclick="S.filtroCat='';renderLista()">Todas</span>${cats.map(c=>`<span class="chip ${S.filtroCat===c?'on':''}" onclick="S.filtroCat='${esc(c)}';renderLista()">${esc(c)}</span>`).join('')}</div>
-    </div><div class="col-b">
-    <div id="listaCorpo">${Object.keys(grupos).length ? Object.entries(grupos).map(([d, items]) => {
-      const tot = items.reduce((s,r)=>s+sinal(r.tipo)*r.valor,0);
-      const dia = new Date(d + 'T12:00').toLocaleDateString('pt-BR', { weekday:'short', day:'2-digit', month:'short', ...(q ? { year:'numeric' } : {}) }).replace(/\./g,'');
-      return `<div class="grouph"><span>${dia.charAt(0).toUpperCase() + dia.slice(1)}</span><span>${tot >= 0 ? '+' : '−'}${fmtBRL(Math.abs(tot))}</span></div><div class="card" style="padding:2px 14px;margin-bottom:6px"><ul class="list">${items.map(r=>itemHTML(r,{saldo:true, semData:true})).join('')}</ul></div>`;
-    }).join('') : '<div class="empty">Nenhum lançamento.</div>'}</div>
-    </div></div>`;
+    <button class="btn sec block" style="margin-bottom:12px" onclick="abrirProgramar(S.mes)">${ic('repeat',17)}Programar ${mesLongo(addMes(mes,1)).toLowerCase()}</button>`}
+    <div class="searchbox">${ic('search',18)}<input class="i" id="busca" placeholder="Buscar em todos os meses" value="${esc(S.busca)}" oninput="aoBuscar(this)"></div>
+    <div class="chips">${chip('', 'Todas')}${cats.map(c => chip(c, c)).join('')}</div>
+    </div><div class="col-b"><div id="listaCorpo">${listaCorpoHTML()}</div></div></div>`;
   },
   analise(){
-    const mes = S.mes, r = resumoMes(mes);
-    const meses = mesesComDados();
+    const mes = S.mes, r = resumoMes(mes), meses = mesesComDados();
     return `
     ${navMes(mes)}
     <div class="kpis">
@@ -706,26 +768,42 @@ const telas = {
       <div class="kpi big"><div class="l">Menor saldo no mês</div><div class="v ${r.menor&&r.menor.saldo<0?'neg':''}">${r.menor ? `${fmtBRL(r.menor.saldo)} <span class="small muted" style="font-weight:500">em ${fmtData(r.menor.data)}</span>` : '—'}</div></div>
     </div>
     <div class="dash"><div class="col-a">
-    <div class="card"><div class="h2row"><h2>Saídas por categoria</h2><button class="btn sec sm" onclick="abrirLimites()">${ic('target',15)}Limites</button></div>${Object.keys(r.porCat).length || Object.keys(S.limites||{}).length ? `<div class="bars">${barrasLimite(r.porCat, S.limites, true)}</div>` : '<div class="empty">Sem saídas neste mês.</div>'}</div>
+    <div class="card"><div class="h2row"><h2>Saídas por categoria</h2><button class="btn sec sm" onclick="abrirLimites()">${ic('target',15)}Limites</button></div>${Object.keys(r.porCat).length || Object.keys(S.limites).length ? `<div class="bars">${barras(r.porCat, S.limites, true)}</div>` : '<div class="empty">Sem saídas neste mês.</div>'}</div>
     </div><div class="col-b">
     <div class="card"><h2>Mês a mês</h2><div class="chartbox"><canvas id="chMeses"></canvas></div>
       <div class="tablewrap" style="margin-top:10px"><table class="t"><thead><tr><th>Mês</th><th>Entradas</th><th>Saídas</th><th>Resultado</th></tr></thead><tbody>
-      ${meses.map(m => { const x = resumoMes(m); return `<tr style="cursor:pointer" onclick="S.mes='${m}';render()"><td>${m===mes?'<b>':''}${MESES[+m.slice(5)-1]}/${m.slice(2,4)}${m===mes?'</b>':''}</td><td class="pos">${fmtBRL(x.ent)}</td><td class="neg">${fmtBRL(x.sai)}</td><td class="${x.ent-x.sai<0?'neg':''}">${fmtBRL(x.ent-x.sai)}</td></tr>`; }).join('')}
+      ${meses.map(m => { const x = resumoMes(m), nome = `${mesAbrev(m)}/${m.slice(2,4)}`; return `<tr style="cursor:pointer" onclick="S.mes='${m}';render()"><td>${m===mes ? `<b>${nome}</b>` : nome}</td><td class="pos">${fmtBRL(x.ent)}</td><td class="neg">${fmtBRL(x.sai)}</td><td class="${x.ent-x.sai<0?'neg':''}">${fmtBRL(x.ent-x.sai)}</td></tr>`; }).join('')}
       </tbody></table></div></div>
     </div></div>
     <div class="card"><h2>Categorias × meses</h2><div class="tablewrap">${tabelaCatMes(meses)}</div></div>`;
   }
 };
+/* lista de lançamentos agrupada por dia (re-renderizada sozinha ao digitar na busca) */
+function listaCorpoHTML(){
+  const q = S.busca.trim().toLowerCase();
+  let rs = q ? S.rows.filter(r => `${r.desc} ${r.cat} ${r.obs}`.toLowerCase().includes(q)) : S.rows.filter(r => r.data && ym(r.data) === S.mes);
+  if (S.filtroCat) rs = rs.filter(r => r.cat === S.filtroCat);
+  rs = [...rs].sort((a, b) => porData(b, a));
+  const grupos = {}; rs.forEach(r => (grupos[r.data] = grupos[r.data] || []).push(r));
+  if (!rs.length) return '<div class="empty">Nenhum lançamento.</div>';
+  return Object.entries(grupos).map(([d, items]) => {
+    const tot = items.reduce((s, r) => s + sinal(r.tipo) * r.valor, 0);
+    const dia = cap(new Date(d + 'T12:00').toLocaleDateString('pt-BR', { weekday:'short', day:'2-digit', month:'short', ...(q ? { year:'numeric' } : {}) }).replace(/\./g,''));
+    return `<div class="grouph"><span>${dia}</span><span>${tot >= 0 ? '+' : '−'}${fmtBRL(Math.abs(tot))}</span></div><div class="card" style="padding:2px 14px;margin-bottom:6px"><ul class="list">${items.map(r => itemHTML(r, { saldo:true, semData:true })).join('')}</ul></div>`;
+  }).join('');
+}
+/* Busca: só a lista é refeita; a tela inteira só quando a busca começa ou termina (mostra/esconde o mês) */
+function aoBuscar(input){
+  const antes = !!S.busca.trim(); S.busca = input.value;
+  if (antes === !!S.busca.trim()) return void ($('#listaCorpo').innerHTML = listaCorpoHTML());
+  const pos = input.selectionStart; render();
+  const b = $('#busca'); b.focus(); try { b.setSelectionRange(pos, pos); } catch(e){}
+}
 function navMes(mes){
-  const noInicio = S.mode !== 'demo' && mes <= INICIO_CONTROLE;
-  return `<div class="monthnav"><button class="iconbtn" aria-label="Mês anterior" ${noInicio ? 'disabled style="opacity:.35;cursor:default"' : ''} onclick="S.mes=addMes(S.mes,-1);render()">${ic('left',19)}</button><strong>${nomeMes(mes)}</strong><button class="iconbtn" aria-label="Próximo mês" onclick="S.mes=addMes(S.mes,1);render()">${ic('right',19)}</button></div>`;
+  return `<div class="monthnav"><button class="iconbtn" aria-label="Mês anterior" ${mes <= S.mesMin ? 'disabled' : ''} onclick="S.mes=addMes(S.mes,-1);render()">${ic('left',19)}</button><strong>${nomeMes(mes)}</strong><button class="iconbtn" aria-label="Próximo mês" onclick="S.mes=addMes(S.mes,1);render()">${ic('right',19)}</button></div>`;
 }
-function barras(obj, clicavel){
-  const arr = Object.entries(obj).sort((a,b)=>b[1]-a[1]); const max = arr[0]?.[1] || 1;
-  return arr.map(([k,v]) => `<div class="b" style="--c:${corCat(k)};${clicavel?'cursor:pointer':''}" ${clicavel?`onclick="S.filtroCat='${esc(k)}';S.busca='';irPara('lista')"`:''}><div class="t"><span><i></i>${esc(k)}</span><b>${fmtBRL(v)}</b></div><div class="track"><div class="fill" style="width:${Math.max(2,v/max*100)}%"></div></div></div>`).join('');
-}
-function barrasLimite(porCat, lim, clicavel){
-  lim = lim || {};
+/* Barras por categoria; com limites, a barra mostra quanto do limite foi usado (amarelo ≥ 90%, vermelho acima) */
+function barras(porCat, lim = {}, clicavel = false){
   const cats = [...new Set([...Object.keys(porCat), ...Object.keys(lim)])];
   const max = Math.max(1, ...cats.map(c => porCat[c] || 0));
   return cats.sort((a,b) => (porCat[b]||0) - (porCat[a]||0)).map(c => {
@@ -738,96 +816,99 @@ function barrasLimite(porCat, lim, clicavel){
   }).join('');
 }
 function tabelaCatMes(meses){
-  const cats = [...new Set(S.rows.filter(r=>normTipo(r.tipo)==='Saída').map(r=>r.cat))].sort();
-  const res = Object.fromEntries(meses.map(m => [m, resumoMes(m).porCat]));
-  return `<table class="t"><thead><tr><th>Categoria</th>${meses.map(m=>`<th>${MESES[+m.slice(5)-1]}</th>`).join('')}<th>Total</th></tr></thead><tbody>
-  ${cats.map(c => { const vs = meses.map(m => res[m][c]||0); return `<tr><td>${esc(c)}</td>${vs.map(v=>`<td>${v?fmtBRL(v).replace('R$ ',''):'–'}</td>`).join('')}<td><b>${fmtBRL(vs.reduce((a,b)=>a+b,0)).replace('R$ ','')}</b></td></tr>`; }).join('')}
+  const cats = [...new Set(meses.flatMap(m => Object.keys(resumoMes(m).porCat)))].sort();
+  const semRS = v => fmtBRL(v).replace('R$ ','');
+  return `<table class="t"><thead><tr><th>Categoria</th>${meses.map(m => `<th>${mesAbrev(m)}</th>`).join('')}<th>Total</th></tr></thead><tbody>
+  ${cats.map(c => { const vs = meses.map(m => resumoMes(m).porCat[c] || 0); return `<tr><td>${esc(c)}</td>${vs.map(v => `<td>${v ? semRS(v) : '–'}</td>`).join('')}<td><b>${semRS(vs.reduce((a,b)=>a+b,0))}</b></td></tr>`; }).join('')}
   </tbody></table>`;
 }
-function renderLista(){
-  const pos = $('#busca')?.selectionStart; render();
-  const b = $('#busca'); if (b && document.activeElement !== b && S.busca){ b.focus(); try{ b.setSelectionRange(pos,pos); }catch(e){} }
-}
 
+/* ---- gráficos ---- */
 function corVar(n){ return getComputedStyle(document.documentElement).getPropertyValue(n).trim(); }
+const tooltipBRL = { padding:10, cornerRadius:10, callbacks:{ label: x => `${x.dataset.label}: ${fmtBRL(x.parsed.y)}` } };
 const posRender = {
   home(){
     const c = S._calc; if (!c || !window.Chart) return;
     const porDia = new Map(); c.ord.forEach(r => porDia.set(r.data, r.saldo));
-    const ini = isoLocal(new Date(Date.now() - 45*864e5));
+    const ini = isoLocal(new Date(Date.now() - 45*864e5)), hoje = today();
     const pts = [...porDia.entries()].filter(([d]) => d >= ini);
-    const hoje = today();
-    const labels = pts.map(([d]) => fmtData(d));
     const real = pts.map(([d,v]) => d <= hoje ? v : null);
     const proj = pts.map(([d,v], i) => (d >= hoje || (pts[i+1] && pts[i+1][0] > hoje)) ? v : null);
     const brand = corVar('--brand'), muted = corVar('--muted'), line = corVar('--line');
     const idxHoje = pts.findIndex(([d]) => d > hoje) - 1;
-    const area = ctx => { const { chart } = ctx; const a = chart.chartArea; if (!a) return 'transparent';
+    const area = ({ chart }) => { const a = chart.chartArea; if (!a) return 'transparent';
       const g = chart.ctx.createLinearGradient(0, a.top, 0, a.bottom); g.addColorStop(0, brand + '40'); g.addColorStop(1, brand + '00'); return g; };
     const linhaHoje = { id:'hoje', afterDatasetsDraw(ch){ if (idxHoje < 0) return; const x = ch.scales.x.getPixelForValue(idxHoje), { top, bottom } = ch.chartArea, k = ch.ctx;
       k.save(); k.strokeStyle = muted; k.globalAlpha = .5; k.setLineDash([3,3]); k.beginPath(); k.moveTo(x, top); k.lineTo(x, bottom); k.stroke();
       k.globalAlpha = 1; k.setLineDash([]); k.fillStyle = muted; k.font = '600 11px Inter, system-ui'; k.textAlign = 'center'; k.fillText('hoje', x, top + 10); k.restore(); } };
-    const compacto = v => Math.abs(v) >= 1000 ? (v/1000).toLocaleString('pt-BR', { maximumFractionDigits:1 }) + ' mil' : v.toLocaleString('pt-BR');
+    const linhaBase = { borderColor:brand, pointRadius:0, pointHoverRadius:4, tension:.3, spanGaps:true };
     charts.saldo = new Chart($('#chSaldo'), {
       type:'line',
-      data:{ labels, datasets:[
-        { label:'Realizado', data:real, borderColor:brand, backgroundColor:area, fill:true, borderWidth:2.5, pointRadius:0, pointHoverRadius:4, tension:.3, spanGaps:true },
-        { label:'Projetado', data:proj, borderColor:brand, backgroundColor:'transparent', borderDash:[5,4], borderWidth:2, pointRadius:0, pointHoverRadius:4, tension:.3, spanGaps:true }
+      data:{ labels: pts.map(([d]) => fmtData(d)), datasets:[
+        { ...linhaBase, label:'Realizado', data:real, backgroundColor:area, fill:true, borderWidth:2.5 },
+        { ...linhaBase, label:'Projetado', data:proj, backgroundColor:'transparent', borderDash:[5,4], borderWidth:2 }
       ]},
       plugins:[linhaHoje],
       options:{ maintainAspectRatio:false, interaction:{ mode:'index', intersect:false }, layout:{ padding:{ top:14 } },
-        plugins:{ legend:{ display:false }, tooltip:{ displayColors:false, padding:10, cornerRadius:10, filter: x => x.parsed.y != null, callbacks:{ label: x => `${x.dataset.label}: ${fmtBRL(x.parsed.y)}` } } },
+        plugins:{ legend:{ display:false }, tooltip:{ ...tooltipBRL, displayColors:false, filter: x => x.parsed.y != null } },
         scales:{ x:{ ticks:{ color:muted, maxTicksLimit:6, maxRotation:0, font:{ size:11 } }, grid:{ display:false }, border:{ display:false } },
                  y:{ ticks:{ color:muted, maxTicksLimit:5, font:{ size:11 }, callback:compacto }, grid:{ color:line }, border:{ display:false } } } }
     });
   },
   analise(){
     if (!window.Chart) return;
-    const meses = mesesComDados(); const rs = meses.map(resumoMes);
-    const muted = corVar('--muted'), line = corVar('--line');
+    const meses = mesesComDados(), rs = meses.map(resumoMes), muted = corVar('--muted');
+    const barra = { borderRadius:6, maxBarThickness:22 };
     charts.meses = new Chart($('#chMeses'), {
       type:'bar',
-      data:{ labels: meses.map(m => MESES[+m.slice(5)-1]), datasets:[
-        { label:'Entradas', data: rs.map(r=>r.ent), backgroundColor: corVar('--pos'), borderRadius:6, maxBarThickness:22 },
-        { label:'Saídas', data: rs.map(r=>r.sai), backgroundColor: corVar('--neg'), borderRadius:6, maxBarThickness:22 }
+      data:{ labels: meses.map(mesAbrev), datasets:[
+        { ...barra, label:'Entradas', data: rs.map(r => r.ent), backgroundColor: corVar('--pos') },
+        { ...barra, label:'Saídas', data: rs.map(r => r.sai), backgroundColor: corVar('--neg') }
       ]},
-      options:{ maintainAspectRatio:false, plugins:{ legend:{ position:'top', align:'start', labels:{ color:muted, boxWidth:10, boxHeight:10, useBorderRadius:true, borderRadius:3, font:{ size:12 } } }, tooltip:{ padding:10, cornerRadius:10, callbacks:{ label: x => `${x.dataset.label}: ${fmtBRL(x.parsed.y)}` } } },
-        scales:{ x:{ ticks:{ color:muted }, grid:{ display:false }, border:{ display:false } }, y:{ ticks:{ color:muted, maxTicksLimit:5, callback: v => Math.abs(v) >= 1000 ? (v/1000).toLocaleString('pt-BR') + ' mil' : v }, grid:{ color:line }, border:{ display:false } } } }
+      options:{ maintainAspectRatio:false, plugins:{ legend:{ position:'top', align:'start', labels:{ color:muted, boxWidth:10, boxHeight:10, useBorderRadius:true, borderRadius:3, font:{ size:12 } } }, tooltip:tooltipBRL },
+        scales:{ x:{ ticks:{ color:muted }, grid:{ display:false }, border:{ display:false } }, y:{ ticks:{ color:muted, maxTicksLimit:5, callback:compacto }, grid:{ color:corVar('--line') }, border:{ display:false } } } }
     });
   }
 };
 
-/* ---------------- formulário de lançamento ---------------- */
-function abrirForm(rowNum, prefill){
-  if (rowNum < 0) return toast('Este lançamento está guardado no aparelho e vai para a planilha quando houver internet.', 4000);
-  const ed = rowNum ? S.rows.find(r => r.row === rowNum) : null;
-  const l = ed ? { ...ed, tipo: normTipo(ed.tipo) } : { data: today(), desc:'', cat:'', tipo:'Saída', forma:'Débito', status:'Pago', valor:'', obs:'', rec:'Única', ...(prefill || {}) };
-  const recOpc = ['Única','Recorrente','Parcelada'];
-  const parcAtual = ed ? ed.desc.match(/\s(\d+)\/(\d+)$/) : null; // editando algo que já é uma parcela ("MBA 2/12")
-  if (ed && parcAtual && !l.rec) l.rec = 'Parcelada';
-  const descs = [...new Set(S.rows.map(r => r.desc).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'pt-BR'));
-  const opt = (arr, sel) => arr.map(v => `<option ${v===sel?'selected':''}>${esc(v)}</option>`).join('');
+/* ============================== janelas ============================== */
+function abrirSheet(html){
+  fecharSheet();
   const bg = document.createElement('div'); bg.className = 'sheet-bg'; bg.id = 'sheet';
   bg.onclick = e => { if (e.target === bg) bg.remove(); };
-  bg.innerHTML = `<div class="sheet">
-    <h3>${ed ? 'Editar lançamento' : 'Novo lançamento'}<button class="iconbtn plain" aria-label="Fechar" onclick="$('#sheet').remove()">${ic('x',20)}</button></h3>
+  bg.innerHTML = `<div class="sheet">${html}</div>`; document.body.appendChild(bg); return bg;
+}
+const fecharSheet = () => $('#sheet')?.remove();
+const cabecalho = titulo => `<h3>${titulo}<button class="iconbtn plain" aria-label="Fechar" onclick="fecharSheet()">${ic('x',20)}</button></h3>`;
+
+/* ---- formulário de lançamento (estado do formulário aberto fica em F) ---- */
+let F = {};
+function abrirForm(rowNum, prefill){
+  if (rowNum < 0) return toast('Este lançamento está guardado no aparelho e vai para a planilha quando houver internet.', 4000);
+  const ed = rowNum ? linha(rowNum) : null;
+  const l = ed ? { ...ed } : { data: today(), desc:'', cat:'', tipo:'Saída', forma:'Débito', status:'Pago', valor:'', obs:'', rec:'Única', ...(prefill || {}) };
+  const parcAtual = ed ? parcela(ed.desc) : null; // editando algo que já é uma parcela ("MBA 2/12")
+  if (parcAtual && !l.rec) l.rec = 'Parcelada';
+  F = { ed, modo: null, parcInfo: null };
+  const descs = [...new Set(S.rows.map(r => r.desc).filter(Boolean))].sort((a,b) => a.localeCompare(b,'pt-BR'));
+  const bg = abrirSheet(`${cabecalho(ed ? 'Editar lançamento' : 'Novo lançamento')}
     ${ed && ed.status === 'Previsão' ? `<button class="btn block" style="margin-bottom:14px" onclick="abrirRegistro(${ed.row})">${ic('check', 18, 2.4)}Registrar pagamento desta previsão</button>` : ''}
     <div class="seg" id="segTipo">${TIPOS.map(t => `<button type="button" class="${t===l.tipo?'on':''}" data-v="${t}">${t}</button>`).join('')}</div>
-    <div class="valorbox"><span>R$</span><input class="i valor" id="fValor" inputmode="decimal" placeholder="0,00" aria-label="Valor" value="${l.valor!=='' ? String(l.valor).replace('.',',') : ''}"></div>
-    <label class="f"><span>Descrição</span><input class="i" id="fDesc" list="dlDesc" autocomplete="off" value="${esc(l.desc)}"><datalist id="dlDesc">${descs.map(d=>`<option value="${esc(d)}">`).join('')}</datalist></label>
+    <div class="valorbox"><span>R$</span><input class="i valor" id="fValor" inputmode="decimal" placeholder="0,00" aria-label="Valor" value="${l.valor !== '' ? numBR(l.valor) : ''}"></div>
+    <label class="f"><span>Descrição</span><input class="i" id="fDesc" list="dlDesc" autocomplete="off" value="${esc(l.desc)}"><datalist id="dlDesc">${descs.map(d => `<option value="${esc(d)}">`).join('')}</datalist></label>
     <div class="row">
-      <label class="f"><span>Categoria</span><select class="i" id="fCat"><option value="">Escolha…</option>${opt(CATEGORIAS.includes(l.cat)||!l.cat?CATEGORIAS:[...CATEGORIAS,l.cat], l.cat)}</select></label>
+      <label class="f"><span>Categoria</span><select class="i" id="fCat"><option value="">Escolha…</option>${opt(CATEGORIAS.includes(l.cat) || !l.cat ? CATEGORIAS : [...CATEGORIAS, l.cat], l.cat)}</select></label>
       <label class="f"><span>Forma</span><select class="i" id="fForma">${opt(FORMAS, l.forma)}</select></label>
     </div>
     <div class="row">
       <label class="f" id="boxData"><span>Data</span><input class="i" type="date" id="fData" value="${l.data}"></label>
       <label class="f" id="boxMes" style="display:none"><span id="lblMes">Mês</span><select class="i" id="fMes">${opcoesMes(l.data)}</select></label>
-      <label class="f"><span>Status</span><select class="i" id="fStatus">${opt(STATUS.includes(l.status)?STATUS:[...STATUS,l.status], l.status)}</select></label>
+      <label class="f"><span>Status</span><select class="i" id="fStatus">${opt(STATUS.includes(l.status) ? STATUS : [...STATUS, l.status], l.status)}</select></label>
     </div>
     <label class="f"><span>Observação (opcional)</span><input class="i" id="fObs" value="${esc(l.obs)}"></label>
     <span class="lbl">Esse lançamento é</span>
-    <div class="seg" id="segRec">${recOpc.map(v => `<button type="button" class="${v === l.rec ? 'on' : ''}" data-v="${v}">${{'Única':'Única vez','Recorrente':'Todo mês','Parcelada':'Parcelado'}[v]}</button>`).join('')}</div>
-    ${parcAtual ? `<div id="parcAtual" class="small muted" style="display:${l.rec === 'Parcelada' ? '' : 'none'};margin:-4px 0 12px">Esta é a parcela ${parcAtual[1]} de ${parcAtual[2]}. As outras parcelas são lançamentos separados e não são alteradas aqui.</div>`
+    <div class="seg" id="segRec">${[['Única','Única vez'],['Recorrente','Todo mês'],['Parcelada','Parcelado']].map(([v, n]) => `<button type="button" class="${v === l.rec ? 'on' : ''}" data-v="${v}">${n}</button>`).join('')}</div>
+    ${parcAtual ? `<div id="parcAtual" class="small muted" style="display:${l.rec === 'Parcelada' ? '' : 'none'};margin:-4px 0 12px">Esta é a parcela ${parcAtual.atual} de ${parcAtual.total}. As outras parcelas são lançamentos separados e não são alteradas aqui.</div>`
     : `<div id="parcBox" style="display:${ed && l.rec === 'Parcelada' ? '' : 'none'}"><div class="row">
       <label class="f"><span>Nº de parcelas</span><input class="i" id="fNParc" type="number" min="2" max="60" value="2" inputmode="numeric"></label>
       <label class="f"><span>O valor digitado é</span><select class="i" id="fParcModo"><option value="parcela">de cada parcela</option><option value="total">o total da compra</option></select></label>
@@ -837,95 +918,76 @@ function abrirForm(rowNum, prefill){
       <button class="btn sec" style="flex:0 0 auto" onclick="duplicar(${ed.row})">${ic('copy',17)}Duplicar</button>` : ''}
       <button class="btn" id="fSalvar" onclick="salvar(${ed ? ed.row : 0})">${ed ? 'Salvar alterações' : 'Lançar'}</button>
     </div>
-    ${ed ? `<div class="small muted" style="margin-top:8px">Linha ${ed.row} da aba ${esc(S.sheetName)}</div>` : ''}
-  </div>`;
-  document.body.appendChild(bg);
-  S._edData = ed ? ed.data : null;
-  S._modoData = null;
+    ${ed ? `<div class="small muted" style="margin-top:8px">Linha ${ed.row} da aba ${esc(S.sheetName)}</div>` : ''}`);
   bg.querySelectorAll('#segTipo button').forEach(b => b.onclick = () => {
-    bg.querySelectorAll('#segTipo button').forEach(x => x.classList.remove('on')); b.classList.add('on');
+    marcarSeg('segTipo', b.dataset.v);
     const t = b.dataset.v;
-    if (t === 'Entrada' && !$('#fCat').value) { $('#fCat').value = 'Renda'; $('#fForma').value = 'Conta'; }
-    if ((t === 'Investimento' || t === 'Retirada') && !$('#fCat').value) { $('#fCat').value = 'Investimento'; $('#fForma').value = 'Conta'; }
+    if (t === 'Entrada' && !$('#fCat').value){ $('#fCat').value = 'Renda'; $('#fForma').value = 'Conta'; }
+    if ((t === 'Investimento' || t === 'Retirada') && !$('#fCat').value){ $('#fCat').value = 'Investimento'; $('#fForma').value = 'Conta'; }
     atualizarModoData();
   });
+  bg.querySelectorAll('#segRec button').forEach(b => b.onclick = () => setRec(b.dataset.v));
   $('#fForma').addEventListener('change', () => atualizarModoData());
   $('#fStatus').addEventListener('change', () => atualizarModoData());
-  $('#fMes').addEventListener('change', () => { if (!ed && modoData() === 'fatura') $('#fStatus').value = dataFatura($('#fMes').value) > today() ? 'Programado' : 'Pago'; if (recAtual() === 'Parcelada') S._parcInfo?.(); });
-  atualizarModoData(true);
+  $('#fMes').addEventListener('change', () => { if (!ed && F.modo === 'fatura') $('#fStatus').value = statusPorData(dataFatura($('#fMes').value)); F.parcInfo?.(); });
+  $('#fData').addEventListener('change', e => { if (!ed) $('#fStatus').value = statusPorData(e.target.value); });
   $('#fDesc').addEventListener('change', e => {
+    if (ed) return;
     const ult = [...S.rows].reverse().find(r => r.desc.toLowerCase() === e.target.value.trim().toLowerCase());
     if (!ult) return;
-    if (!ed){
-      $('#fCat').value = ult.cat; $('#fForma').value = ult.forma;
-      bg.querySelectorAll('#segTipo button').forEach(x => x.classList.toggle('on', x.dataset.v === normTipo(ult.tipo)));
-      if (ult.rec === 'Recorrente' || ult.rec === 'Única') setRec(ult.rec);
-      if (!$('#fValor').value) $('#fValor').value = String(ult.valor).replace('.',',');
-    }
+    $('#fCat').value = ult.cat; $('#fForma').value = ult.forma;
+    marcarSeg('segTipo', ult.tipo);
+    if (ult.rec === 'Recorrente' || ult.rec === 'Única') setRec(ult.rec);
+    if (!$('#fValor').value) $('#fValor').value = numBR(ult.valor);
+    atualizarModoData();
   });
-  $('#fData').addEventListener('change', e => { if (!ed) $('#fStatus').value = e.target.value > today() ? 'Programado' : 'Pago'; });
-  bg.querySelectorAll('#segRec button').forEach(b => b.onclick = () => setRec(b.dataset.v));
   if (!parcAtual){
-    const info = () => {
+    F.parcInfo = () => {
+      if (segAtual('segRec') !== 'Parcelada') return;
       const lst = gerarParcelas(lerForm(), parseInt($('#fNParc').value, 10), $('#fParcModo').value);
-      $('#parcInfo').textContent = lst ? `${lst.length}× de ${fmtBRL(lst[0].valor)} (total ${fmtBRL(lst.reduce((s,x)=>s+x.valor,0))}), de ${fmtDataLonga(lst[0].data)} a ${fmtDataLonga(lst[lst.length-1].data)}. A descrição recebe "1/${lst.length}", "2/${lst.length}"…${ed ? ' Este lançamento vira a parcela 1 e as outras são criadas nos meses seguintes.' : ''}` : 'Informe valor, data e de 2 a 60 parcelas.';
+      $('#parcInfo').textContent = lst ? `${lst.length}× de ${fmtBRL(lst[0].valor)} (total ${fmtBRL(soma(lst))}), de ${fmtDataLonga(lst[0].data)} a ${fmtDataLonga(lst[lst.length-1].data)}. A descrição recebe "1/${lst.length}", "2/${lst.length}"…${ed ? ' Este lançamento vira a parcela 1 e as outras são criadas nos meses seguintes.' : ''}` : 'Informe valor, data e de 2 a 60 parcelas.';
     };
-    S._parcInfo = info;
-    ['#fNParc','#fParcModo','#fValor','#fData'].forEach(s => $(s).addEventListener('input', () => { if (recAtual() === 'Parcelada') info(); }));
-    if (ed && l.rec === 'Parcelada') info();
-  } else S._parcInfo = null;
+    ['#fNParc','#fParcModo','#fValor','#fData'].forEach(s => $(s).addEventListener('input', () => F.parcInfo()));
+  }
+  atualizarModoData(true);
   if (!ed) setTimeout(() => $('#fValor')?.focus(), 50);
 }
-/* Data do lançamento: dia exato, mês da fatura (cartão) ou só o mês (previsão) */
 function opcoesMes(sel){
   const base = ym(today()), meses = [];
-  for (let k = -3; k <= 14; k++){ const m = addMes(base, k); if (S.mode === 'demo' || m >= INICIO_CONTROLE) meses.push(m); }
+  for (let k = -3; k <= 14; k++){ const m = addMes(base, k); if (m >= S.mesMin) meses.push(m); }
   if (sel && !meses.includes(ym(sel))) meses.push(ym(sel));
-  return meses.sort().map(m => `<option value="${m}" ${sel && ym(sel) === m ? 'selected' : ''}>${MESES[+m.slice(5) - 1]} ${m.slice(0, 4)}</option>`).join('');
+  return meses.sort().map(m => `<option value="${m}" ${sel && ym(sel) === m ? 'selected' : ''}>${mesAbrev(m)} ${m.slice(0,4)}</option>`).join('');
 }
-function modoData(){
-  const tipo = document.querySelector('#segTipo button.on')?.dataset.v;
-  if ($('#fForma')?.value === 'Cartão' && tipo === 'Saída') return 'fatura';
-  if ($('#fStatus')?.value === 'Previsão') return 'mes';
-  return 'dia';
-}
+const modoForm = () => modoDe(segAtual('segTipo'), $('#fForma').value, $('#fStatus').value);
+/* Troca o campo de data conforme o modo e, ao mudar de modo, sugere um mês/data coerente */
 function atualizarModoData(inicio){
-  const modo = modoData(), antes = S._modoData; S._modoData = modo;
+  const modo = modoForm(), antes = F.modo; F.modo = modo;
   $('#boxData').style.display = modo === 'dia' ? '' : 'none';
   $('#boxMes').style.display = modo === 'dia' ? 'none' : '';
   $('#lblMes').textContent = modo === 'fatura' ? 'Fatura de' : 'Mês da previsão';
   if (modo === antes) return;
-  const novo = !S._edData;
   if (modo === 'fatura'){
     // novo lançamento: sugere a fatura pela regra do melhor dia; editando: mantém o mês do lançamento
-    $('#fMes').value = novo ? faturaSugerida($('#fData').value || today()) : ym(S._edData);
-    if (novo && $('#fStatus').value !== 'Previsão') $('#fStatus').value = dataFatura($('#fMes').value) > today() ? 'Programado' : 'Pago';
+    $('#fMes').value = F.ed ? ym(F.ed.data) : faturaSugerida($('#fData').value || today());
+    if (!F.ed && $('#fStatus').value !== 'Previsão') $('#fStatus').value = statusPorData(dataFatura($('#fMes').value));
   } else if (modo === 'mes' && !inicio){
     $('#fMes').value = ym($('#fData').value || today());
-  } else if (modo === 'dia' && antes === 'mes' && !inicio && $('#fMes').value){
-    // saindo de "previsão": parte do mês que estava escolhido (o mês da fatura não é a data da compra, então nesse caso a data fica como estava)
+  } else if (modo === 'dia' && antes === 'mes' && !inicio){
+    // saindo de "previsão": parte do mês que estava escolhido (o mês da fatura não é data de compra, então nesse caso a data fica como estava)
     const m = $('#fMes').value; if (ym($('#fData').value) !== m) $('#fData').value = m === ym(today()) ? today() : `${m}-01`;
   }
-  if (recAtual() === 'Parcelada') S._parcInfo?.();
+  F.parcInfo?.();
 }
-function dataEscolhida(){
-  const modo = modoData();
-  if (modo === 'dia') return $('#fData').value;
-  const m = $('#fMes').value;
-  if (S._edData && ym(S._edData) === m) return S._edData; // editando sem trocar o mês: mantém a data original
-  return modo === 'fatura' ? dataFatura(m) : ultimoDiaMes(m);
-}
-const recAtual = () => document.querySelector('#segRec button.on')?.dataset.v || '';
 function setRec(v){
-  document.querySelectorAll('#segRec button').forEach(x => x.classList.toggle('on', x.dataset.v === v));
-  const box = $('#parcBox'); if (box){ box.style.display = v === 'Parcelada' ? '' : 'none'; if (v === 'Parcelada') S._parcInfo?.(); }
+  marcarSeg('segRec', v);
+  const box = $('#parcBox'); if (box){ box.style.display = v === 'Parcelada' ? '' : 'none'; F.parcInfo?.(); }
   const atual = $('#parcAtual'); if (atual) atual.style.display = v === 'Parcelada' ? '' : 'none';
 }
 function lerForm(){
   return {
-    rec: recAtual(),
-    tipo: document.querySelector('#segTipo button.on').dataset.v,
-    valor: parseValor($('#fValor').value), desc: $('#fDesc').value.trim(), data: dataEscolhida(),
+    rec: segAtual('segRec'), tipo: segAtual('segTipo'),
+    valor: parseValor($('#fValor').value), desc: $('#fDesc').value.trim(),
+    data: resolverData({ modo: modoForm(), dia: $('#fData').value, mes: $('#fMes').value, original: F.ed?.data }),
     cat: $('#fCat').value, forma: $('#fForma').value, status: $('#fStatus').value, obs: $('#fObs').value.trim()
   };
 }
@@ -934,15 +996,14 @@ function gerarParcelas(l, n, modo){
   const total = Math.round(l.valor * 100) * (modo === 'total' ? 1 : n);
   const base = Math.floor(total / n), resto = total - base * n;
   return Array.from({ length: n }, (_, i) => ({
-    ...l, desc: `${l.desc} ${i+1}/${n}`, data: ehUltimoDia(l.data) ? ultimoDiaMes(addMes(ym(l.data), i)) : addMesesData(l.data, i),
+    ...l, desc: comParcela(l.desc, i + 1, n), data: mesesDepois(l.data, i),
     valor: (base + (i === n - 1 ? resto : 0)) / 100,
     status: i === 0 ? l.status : 'Programado'
   }));
 }
 function duplicar(rowNum){
-  const r = S.rows.find(x => x.row === rowNum); if (!r) return;
-  $('#sheet')?.remove();
-  abrirForm(0, { desc: baseDesc(r.desc), cat: r.cat, tipo: normTipo(r.tipo), forma: r.forma, valor: r.valor, obs: r.obs, status: 'Pago', rec: r.rec === 'Recorrente' ? 'Recorrente' : 'Única' });
+  const r = linha(rowNum); if (!r) return;
+  abrirForm(0, { desc: baseDesc(r.desc), cat: r.cat, tipo: r.tipo, forma: r.forma, valor: r.valor, obs: r.obs, status: 'Pago', rec: r.rec === 'Recorrente' ? 'Recorrente' : 'Única' });
 }
 async function salvar(rowNum){
   const l = lerForm();
@@ -956,162 +1017,131 @@ async function salvar(rowNum){
     lista = gerarParcelas(l, parseInt($('#fNParc').value, 10), $('#fParcModo').value);
     if (!lista) return toast('Informe de 2 a 60 parcelas');
   }
-  const btn = $('#fSalvar'); btn.disabled = true; btn.textContent = 'Salvando…';
-  try {
+  await comBotao('#fSalvar', 'Salvando…', async () => {
     let guardado = false;
     if (rowNum){
       // a linha editada recebe a 1ª parcela (ou o próprio lançamento); as demais parcelas entram como novas
-      if (S.mode === 'graph'){ await gravarLinha(rowNum, lista[0]); if (lista.length === 1) await carregarGraph(); }
-      else Object.assign(S.rows.find(r => r.row === rowNum), lista[0]);
+      await db().atualizar(rowNum, lista[0]);
       if (lista.length > 1) guardado = await inserirNovos(lista.slice(1));
     } else guardado = await inserirNovos(lista);
-    $('#sheet')?.remove();
+    fecharSheet();
     toast(guardado ? 'Sem internet: guardado no aparelho, será enviado à planilha depois'
       : rowNum ? (lista.length > 1 ? `Transformado em ${lista.length} parcelas ✓` : 'Alterações salvas ✓')
       : lista.length > 1 ? `${lista.length} parcelas lançadas ✓` : 'Lançado ✓', guardado ? 4500 : 2600);
     render();
-  } catch(e){ btn.disabled = false; btn.textContent = 'Tentar de novo'; toast('Erro: ' + e.message, 5000); }
+  });
 }
 async function excluir(rowNum){
-  const r = S.rows.find(x => x.row === rowNum);
+  const r = linha(rowNum); if (!r) return;
   if (!confirm(`Excluir "${r.desc}" de ${fmtDataLonga(r.data)} (${fmtBRL(r.valor)})?\nA linha ${rowNum} será esvaziada na planilha.`)) return;
-  try {
-    if (S.mode === 'graph'){ await limparLinha(rowNum); await carregarGraph(); }
-    else S.rows = S.rows.filter(x => x.row !== rowNum);
-    $('#sheet')?.remove(); toast('Excluído'); render();
-  } catch(e){ toast('Erro: ' + e.message, 5000); }
+  try { await db().limpar(rowNum); fecharSheet(); toast('Excluído'); render(); }
+  catch(e){ toast('Erro: ' + e.message, 5000); }
 }
 async function marcarPago(rowNum){
-  const r = S.rows.find(x => x.row === rowNum); if (!r) return;
-  try {
-    if (S.mode === 'graph'){
-      const base = `${await wb()}/worksheets('${encodeURIComponent(S.sheetName)}')`;
-      await graph('PATCH', `${base}/range(address='F${rowNum}')`, { values: [['Pago']] });
-    }
-    r.status = 'Pago'; toast(`"${r.desc}" marcado como pago ✓`); render();
-  } catch(e){ toast('Erro: ' + e.message, 5000); }
+  const r = linha(rowNum); if (!r) return;
+  try { await db().marcarPago(rowNum); toast(`"${r.desc}" marcado como pago ✓`); render(); }
+  catch(e){ toast('Erro: ' + e.message, 5000); }
 }
 
-/* ---------------- janelas auxiliares ---------------- */
-function abrirSheet(html){
-  $('#sheet')?.remove();
-  const bg = document.createElement('div'); bg.className = 'sheet-bg'; bg.id = 'sheet';
-  bg.onclick = e => { if (e.target === bg) bg.remove(); };
-  bg.innerHTML = `<div class="sheet">${html}</div>`; document.body.appendChild(bg); return bg;
-}
-const fechar = `<button class="iconbtn plain" aria-label="Fechar" onclick="$('#sheet').remove()">${ic('x',20)}</button>`;
-
-/* Programar o próximo mês a partir dos lançamentos de um mês */
-const baseDesc = d => d.replace(/\s*\d+\/\d+$/, '').trim();
+/* ---- programar o próximo mês ---- */
+let PROG = [];
 function abrirProgramar(orig){
   const dest = addMes(orig, 1);
   const noDestino = new Set(S.rows.filter(r => r.data && ym(r.data) === dest).map(r => r.desc.trim().toLowerCase()));
   const meses = {}; S.rows.forEach(r => { if (!r.data) return; const k = baseDesc(r.desc).toLowerCase(); (meses[k] = meses[k] || new Set()).add(ym(r.data)); });
-  const itens = S.rows.filter(r => r.data && ym(r.data) === orig && !r.pendente && r.status !== 'Marco zero')
-    .sort((a,b) => a.data === b.data ? a.row - b.row : (a.data < b.data ? -1 : 1))
-    .map(r => {
-      const p = r.desc.match(/^(.*?)\s*(\d+)\/(\d+)$/);
-      let desc = r.desc, nota = '';
-      if (p){ const a = +p[2], n = +p[3]; if (a >= n) nota = 'última parcela'; else desc = `${p[1]} ${a+1}/${n}`; }
-      if (!nota && noDestino.has(desc.trim().toLowerCase())) nota = `já existe em ${MESES[+dest.slice(5)-1]}`;
-      // marcação explícita (coluna Recorrência) manda; sem marcação, deduz pelo histórico
-      const recorrente = !!p || r.rec === 'Recorrente' || (!r.rec && (meses[baseDesc(r.desc).toLowerCase()]?.size || 0) >= 2);
-      const data = r.status === 'Previsão' && ehUltimoDia(r.data) ? ultimoDiaMes(addMes(ym(r.data), 1)) : addMesesData(r.data, 1);
-      return { r, desc, parc: !!p, data, nota, marcado: !nota && recorrente };
-    });
-  S._prog = itens;
-  abrirSheet(`<h3>Programar ${nomeMes(dest)}${fechar}</h3>
+  PROG = S.rows.filter(r => r.data && ym(r.data) === orig && !r.pendente && r.status !== 'Marco zero').sort(porData).map(r => {
+    const p = parcela(r.desc);
+    let desc = r.desc, nota = '';
+    if (p){ if (p.atual >= p.total) nota = 'última parcela'; else desc = comParcela(p.base, p.atual + 1, p.total); }
+    if (!nota && noDestino.has(desc.trim().toLowerCase())) nota = `já existe em ${mesAbrev(dest)}`;
+    // marcação explícita (coluna Recorrência) manda; sem marcação, deduz pelo histórico
+    const recorrente = !!p || r.rec === 'Recorrente' || (!r.rec && (meses[baseDesc(r.desc).toLowerCase()]?.size || 0) >= 2);
+    const data = r.status === 'Previsão' ? mesesDepois(r.data, 1) : addMesesData(r.data, 1);
+    return { r, desc, parc: !!p, data, nota, marcado: !nota && recorrente };
+  });
+  abrirSheet(`${cabecalho(`Programar ${nomeMes(dest)}`)}
     <p class="small muted" style="margin-top:0">Copia lançamentos de ${nomeMes(orig)} para o mês seguinte como <b>Programado</b> (ou Previsão). Já vêm marcados os que se repetem em outros meses e as parcelas, que avançam para a próxima (ex.: 2/12 → 3/12). Ajuste valores se precisar.</p>
-    ${itens.length ? `<div class="row" style="margin-bottom:6px"><button class="btn sec sm" onclick="document.querySelectorAll('.progchk:not(:disabled)').forEach(c=>c.checked=true);contarProg()">Marcar todos</button><button class="btn sec sm" onclick="document.querySelectorAll('.progchk').forEach(c=>c.checked=false);contarProg()">Desmarcar todos</button></div>
-    <ul class="list card" style="padding:4px 12px">${itens.map((x, i) => `<li class="item ${x.nota ? 'off' : ''}" style="cursor:default">
+    ${PROG.length ? `<div class="row" style="margin-bottom:6px"><button class="btn sec sm" onclick="marcarProg(true)">Marcar todos</button><button class="btn sec sm" onclick="marcarProg(false)">Desmarcar todos</button></div>
+    <ul class="list card" style="padding:4px 12px">${PROG.map((x, i) => `<li class="item ${x.nota ? 'off' : ''}" style="cursor:default">
       <input type="checkbox" class="progchk" data-i="${i}" ${x.marcado ? 'checked' : ''} ${x.nota ? 'disabled' : ''} onchange="contarProg()">
       <div class="main"><div class="d">${esc(x.desc)}</div><div class="s">${fmtData(x.data)} · ${esc(x.r.cat)} · ${esc(x.r.forma)}${x.r.rec === 'Única' && !x.parc ? ' · única vez' : ''}${x.nota ? ` · <b>${x.nota}</b>` : ''}</div></div>
-      <input class="i mini" id="progv${i}" inputmode="decimal" value="${String(x.r.valor).replace('.', ',')}" ${x.nota ? 'disabled' : ''}></li>`).join('')}</ul>
-    <button class="btn" id="progBtn" style="width:100%" onclick="salvarProgramacao()"></button>` : '<div class="muted">Nenhum lançamento neste mês para copiar.</div>'}`);
+      <input class="i mini" id="progv${i}" inputmode="decimal" value="${numBR(x.r.valor)}" ${x.nota ? 'disabled' : ''}></li>`).join('')}</ul>
+    <button class="btn block" id="progBtn" onclick="salvarProgramacao()"></button>` : '<div class="empty">Nenhum lançamento neste mês para copiar.</div>'}`);
   contarProg();
 }
+function marcarProg(sim){ document.querySelectorAll('.progchk:not(:disabled)').forEach(c => c.checked = sim); contarProg(); }
 function contarProg(){ const n = document.querySelectorAll('.progchk:checked').length, b = $('#progBtn'); if (b){ b.textContent = n ? `Programar ${n} lançamento(s)` : 'Nada marcado'; b.disabled = !n; } }
 async function salvarProgramacao(){
   const lista = [];
   for (const c of document.querySelectorAll('.progchk:checked')){
-    const x = S._prog[+c.dataset.i], v = parseValor($('#progv' + c.dataset.i).value);
+    const x = PROG[+c.dataset.i], v = parseValor($('#progv' + c.dataset.i).value);
     if (!(v > 0)) return toast(`Valor inválido em "${x.desc}"`);
-    lista.push({ data: x.data, desc: x.desc, cat: x.r.cat, tipo: normTipo(x.r.tipo), forma: x.r.forma, status: x.r.status === 'Previsão' ? 'Previsão' : 'Programado', valor: v, obs: x.r.obs || '', rec: x.parc ? 'Parcelada' : 'Recorrente' });
+    lista.push({ data: x.data, desc: x.desc, cat: x.r.cat, tipo: x.r.tipo, forma: x.r.forma, status: x.r.status === 'Previsão' ? 'Previsão' : 'Programado', valor: v, obs: x.r.obs || '', rec: x.parc ? 'Parcelada' : 'Recorrente' });
   }
-  const b = $('#progBtn'); b.disabled = true; b.textContent = 'Gravando…';
-  try {
+  await comBotao('#progBtn', 'Gravando…', async () => {
     const guardado = await inserirNovos(lista);
-    $('#sheet')?.remove();
-    S.mes = ym(lista[0].data); render();
+    fecharSheet(); S.mes = ym(lista[0].data); render();
     toast(guardado ? 'Sem internet: guardados no aparelho, serão enviados depois' : `${lista.length} lançamento(s) programado(s) ✓`, 3500);
-  } catch(e){ b.disabled = false; b.textContent = 'Tentar de novo'; toast('Erro: ' + e.message, 5000); }
+  });
 }
 
-/* Registrar gasto de uma previsão: valor real, total ou parcial */
+/* ---- registrar gasto de uma previsão: valor real, total ou parcial ---- */
 function abrirRegistro(rowNum){
-  const r = S.rows.find(x => x.row === rowNum); if (!r) return;
-  const cartao = ehCartao(r);
-  abrirSheet(`<h3>Registrar gasto${fechar}</h3>
+  const r = linha(rowNum); if (!r) return;
+  abrirSheet(`${cabecalho('Registrar gasto')}
     <div class="item" style="cursor:default;padding-top:0;border-bottom:0">${avatar(r.cat)}<div class="main"><div class="d">${esc(r.desc)}</div>
-      <div class="s">Previsto ${fmtBRL(r.valor)} · ${quando(r).replace(/ · $/, '')}</div></div></div>
+      <div class="s">Previsto ${fmtBRL(r.valor)} · ${esc(quando(r))}</div></div></div>
     <span class="lbl" style="text-align:center">Quanto foi pago?</span>
-    <div class="valorbox" style="padding-top:2px"><span>R$</span><input class="i valor" id="rValor" inputmode="decimal" aria-label="Valor pago" value="${String(r.valor).replace('.', ',')}"></div>
+    <div class="valorbox" style="padding-top:2px"><span>R$</span><input class="i valor" id="rValor" inputmode="decimal" aria-label="Valor pago" value="${numBR(r.valor)}"></div>
     <div class="row">
-      ${cartao ? `<label class="f"><span>Fatura de</span><select class="i" id="rMes">${opcoesMes(r.data)}</select></label>`
-               : `<label class="f"><span>Data do gasto</span><input class="i" type="date" id="rData" value="${today()}"></label>`}
-      <label class="f"><span>Forma</span><select class="i" id="rForma">${FORMAS.map(f => `<option ${f === r.forma ? 'selected' : ''}>${f}</option>`).join('')}</select></label>
+      ${ehCartao(r) ? `<label class="f"><span>Fatura de</span><select class="i" id="rMes">${opcoesMes(r.data)}</select></label>`
+                    : `<label class="f"><span>Data do gasto</span><input class="i" type="date" id="rData" value="${today()}"></label>`}
+      <label class="f"><span>Forma</span><select class="i" id="rForma">${opt(FORMAS, r.forma)}</select></label>
     </div>
     <div id="rResto" style="display:none">
       <span class="lbl" id="rRestoTxt"></span>
       <div class="seg" id="segResto"><button type="button" class="on" data-v="manter">Manter o restante previsto</button><button type="button" data-v="encerrar">Encerrar previsão</button></div>
     </div>
     <button class="btn block" id="rBtn" onclick="salvarRegistro(${r.row})">${ic('check', 18, 2.4)}Registrar pagamento</button>`);
-  const atualizar = () => {
-    const v = parseValor($('#rValor').value), resto = Math.round((r.valor - v) * 100) / 100, mostra = v > 0 && resto > 0.004;
+  $('#rValor').addEventListener('input', () => {
+    const resto = Math.round((r.valor - parseValor($('#rValor').value)) * 100) / 100, mostra = resto > 0.004 && resto < r.valor;
     $('#rResto').style.display = mostra ? '' : 'none';
     if (mostra) $('#rRestoTxt').textContent = `Sobram ${fmtBRL(resto)} da previsão. O que fazer com o restante?`;
-  };
-  $('#rValor').addEventListener('input', atualizar);
-  document.querySelectorAll('#segResto button').forEach(b => b.onclick = () => document.querySelectorAll('#segResto button').forEach(x => x.classList.toggle('on', x === b)));
+  });
+  document.querySelectorAll('#segResto button').forEach(b => b.onclick = () => marcarSeg('segResto', b.dataset.v));
   setTimeout(() => { const i = $('#rValor'); if (i){ i.focus(); i.select(); } }, 80);
 }
 async function salvarRegistro(rowNum){
-  const r = S.rows.find(x => x.row === rowNum); if (!r) return;
+  const r = linha(rowNum); if (!r) return;
   const v = parseValor($('#rValor').value);
   if (!(v > 0)) return toast('Informe o valor pago');
   const forma = $('#rForma').value;
-  let data = $('#rData') ? $('#rData').value : dataFatura($('#rMes').value);
-  if (!data) return toast('Informe a data');
-  if (forma === 'Cartão' && $('#rData')) data = dataFatura(faturaSugerida(data)); // passou a ser no cartão: vai para a fatura
-  if (forma !== 'Cartão' && $('#rMes')) data = today();                          // deixou de ser no cartão: data de hoje
+  // mesma regra do formulário: no cartão vai para a fatura (sugerida pela data, se antes era débito); fora do cartão, a data do gasto
+  const dia = $('#rData')?.value || today();
+  const data = resolverData({ modo: modoDe(r.tipo, forma, 'Pago'), dia, mes: $('#rMes')?.value || faturaSugerida(dia) });
   const resto = Math.round((r.valor - v) * 100) / 100;
-  const manter = resto > 0.004 && document.querySelector('#segResto button.on')?.dataset.v === 'manter';
+  const manter = resto > 0.004 && segAtual('segResto') === 'manter';
   const { row, saldo, pendente, ...base } = r;
-  const pago = { ...base, valor: v, data, forma, status: data > today() ? 'Programado' : 'Pago' };
-  const b = $('#rBtn'); b.disabled = true; b.textContent = 'Registrando…';
-  try {
+  const pago = { ...base, valor: v, data, forma, status: statusPorData(data) };
+  await comBotao('#rBtn', 'Registrando…', async () => {
     let guardado = false;
     if (manter){
       // a previsão continua com o que sobrou; o gasto entra como um lançamento novo, de uma vez só
-      if (S.mode === 'graph') await gravarLinha(rowNum, { ...r, valor: resto }); else r.valor = resto;
+      await db().atualizar(rowNum, { ...base, valor: resto });
       guardado = await inserirNovos([{ ...pago, rec: 'Única', obs: '' }]);
-    } else {
-      if (S.mode === 'graph'){ await gravarLinha(rowNum, pago); await carregarGraph(); } else Object.assign(r, pago);
-    }
-    $('#sheet')?.remove(); render();
+    } else await db().atualizar(rowNum, pago);
+    fecharSheet(); render();
     toast(guardado ? 'Sem internet: guardado no aparelho, será enviado depois'
       : manter ? `Registrado ${fmtBRL(v)} · ainda previstos ${fmtBRL(resto)}` : `${r.desc}: ${fmtBRL(v)} registrado ✓`, 3500);
-  } catch(e){ b.disabled = false; b.textContent = 'Tentar de novo'; toast('Erro: ' + e.message, 5000); }
+  });
 }
 
-/* Fatura do cartão no mês */
+/* ---- fatura do cartão no mês ---- */
 function abrirFatura(mes){
-  const rs = S.rows.filter(r => r.data && ym(r.data) === mes && normTipo(r.tipo) === 'Saída' && r.forma === 'Cartão')
-    .sort((a,b) => a.data === b.data ? a.row - b.row : (a.data < b.data ? -1 : 1));
-  const tot = rs.reduce((s,r) => s + r.valor, 0), pago = rs.filter(r => r.status === 'Pago').reduce((s,r) => s + r.valor, 0);
+  const rs = S.rows.filter(r => r.data && ym(r.data) === mes && ehCartao(r)).sort(porData);
+  const tot = resumoMes(mes).cartao, pago = soma(rs.filter(r => r.status === 'Pago')), ant = resumoMes(addMes(mes, -1)).cartao;
   const porCat = {}; rs.forEach(r => porCat[r.cat] = (porCat[r.cat] || 0) + r.valor);
-  const ant = resumoMes(addMes(mes, -1)).cartao;
-  abrirSheet(`<h3>Cartão · ${nomeMes(mes)}${fechar}</h3>
+  abrirSheet(`${cabecalho(`Cartão · ${nomeMes(mes)}`)}
     <div class="kpis">
       <div class="kpi big"><div class="l">Total no mês (${rs.length} lançamentos)</div><div class="v">${fmtBRL(tot)}</div>
         <div class="small muted">${ant ? `Mês anterior: ${fmtBRL(ant)} (${tot >= ant ? '+' : '−'}${fmtBRL(Math.abs(tot - ant))})` : ''}</div></div>
@@ -1123,27 +1153,24 @@ function abrirFatura(mes){
     <p class="small muted">Considera as saídas com forma "Cartão" pela data lançada, igual ao quadro CARTÃO do Dashboard.</p>`);
 }
 
-/* Limites por categoria */
+/* ---- limites por categoria ---- */
 function abrirLimites(){
-  if (S.mode === 'graph' && !S.limitesOk){
-    abrirSheet(`<h3>Limites por categoria${fechar}</h3>
+  if (!temAbaLimites()){
+    abrirSheet(`${cabecalho('Limites por categoria')}
       <p>Defina quanto quer gastar por mês em cada categoria. O app avisa quando chegar a 90% e quando passar.</p>
       <p class="small muted">Para os limites valerem no PC e no celular, o app vai criar uma aba <b>"Limites"</b> na sua planilha, com: Categoria, Limite mensal, Previsto no mês atual e Disponível. Você também pode editar os limites direto nessa aba.</p>
-      <button class="btn" id="limCriar" style="width:100%" onclick="criarLimitesUI()">Criar aba Limites na planilha</button>`);
+      <button class="btn block" id="limCriar" onclick="criarLimitesUI()">Criar aba Limites na planilha</button>`);
     return;
   }
-  const cats = S.mode === 'graph' ? Object.keys(S.limitesRow) : CATS_LIMITE;
   const gasto = resumoMes(ym(today())).porCat;
-  abrirSheet(`<h3>Limites mensais${fechar}</h3>
-    <p class="small muted" style="margin-top:0">Deixe em branco a categoria sem limite. Abaixo de cada uma, o previsto para ${MESES_LONGO[new Date().getMonth()].toLowerCase()} (pago + programado).</p>
-    <ul class="list card" style="padding:2px 14px">${cats.map(c => `<li class="item" style="cursor:default">${avatar(c)}<div class="main"><div class="d">${esc(c)}</div><div class="s">previsto ${fmtBRL(gasto[c] || 0)}</div></div>
-      <input class="i mini limv" data-c="${esc(c)}" inputmode="decimal" placeholder="sem limite" value="${S.limites[c] ? String(S.limites[c]).replace('.', ',') : ''}"></li>`).join('')}</ul>
-    <button class="btn" id="limBtn" style="width:100%" onclick="salvarLimitesUI()">Salvar limites</button>`);
+  abrirSheet(`${cabecalho('Limites mensais')}
+    <p class="small muted" style="margin-top:0">Deixe em branco a categoria sem limite. Abaixo de cada uma, o previsto para ${mesLongo(ym(today())).toLowerCase()} (pago + programado).</p>
+    <ul class="list card" style="padding:2px 14px">${Object.keys(S.limitesRow).map(c => `<li class="item" style="cursor:default">${avatar(c)}<div class="main"><div class="d">${esc(c)}</div><div class="s">previsto ${fmtBRL(gasto[c] || 0)}</div></div>
+      <input class="i mini limv" data-c="${esc(c)}" inputmode="decimal" placeholder="sem limite" value="${S.limites[c] ? numBR(S.limites[c]) : ''}"></li>`).join('')}</ul>
+    <button class="btn block" id="limBtn" onclick="salvarLimitesUI()">Salvar limites</button>`);
 }
 async function criarLimitesUI(){
-  const b = $('#limCriar'); b.disabled = true; b.textContent = 'Criando aba…';
-  try { await criarAbaLimites(); await carregarLimites(); toast('Aba "Limites" criada ✓'); abrirLimites(); }
-  catch(e){ b.disabled = false; b.textContent = 'Tentar de novo'; toast('Erro: ' + e.message, 5000); }
+  await comBotao('#limCriar', 'Criando aba…', async () => { await criarAbaLimites(); await carregarLimites(); salvarCache(); toast('Aba "Limites" criada ✓'); abrirLimites(); });
 }
 async function salvarLimitesUI(){
   const valores = {};
@@ -1152,93 +1179,76 @@ async function salvarLimitesUI(){
     const v = parseValor(t); if (!(v > 0)) return toast(`Limite inválido em ${i.dataset.c}`);
     valores[i.dataset.c] = v;
   }
-  const b = $('#limBtn'); b.disabled = true; b.textContent = 'Salvando…';
-  try {
-    if (S.mode === 'graph') await gravarLimites(valores);
-    else S.limites = Object.fromEntries(Object.entries(valores).filter(([, v]) => v > 0));
-    $('#sheet')?.remove(); toast('Limites salvos ✓'); render();
-  } catch(e){ b.disabled = false; b.textContent = 'Tentar de novo'; toast('Erro: ' + e.message, 5000); }
+  await comBotao('#limBtn', 'Salvando…', async () => { await db().salvarLimites(valores); fecharSheet(); toast('Limites salvos ✓'); render(); });
 }
 
-/* ---------------- configurações / login ---------------- */
+/* ============================== ajustes, login, início ============================== */
 function abrirConfig(){
   const conta = msalApp?.getActiveAccount();
-  const bg = document.createElement('div'); bg.className = 'sheet-bg'; bg.id = 'sheet';
-  bg.onclick = e => { if (e.target === bg) bg.remove(); };
-  bg.innerHTML = `<div class="sheet"><h3>Ajustes<button class="iconbtn plain" aria-label="Fechar" onclick="$('#sheet').remove()">${ic('x',20)}</button></h3>
+  abrirSheet(`${cabecalho('Ajustes')}
     ${S.mode === 'graph' ? `<div class="card"><div class="small muted">Conectado como</div><div style="font-weight:650;margin:2px 0 10px">${esc(conta?.username || '')}</div>
       <div class="small muted">OneDrive${esc(FILE_PATH)}<br>${S.rows.length} lançamentos · ${S.emptyRows.length} linhas livres na tabela</div></div>
-      <button class="btn sec block" style="margin-bottom:10px" onclick="$('#sheet').remove();abrirLimites()">${ic('target',17)}Limites por categoria</button>
+      <button class="btn sec block" style="margin-bottom:10px" onclick="abrirLimites()">${ic('target',17)}Limites por categoria</button>
       <button class="btn sec block" onclick="sair()">Sair da conta</button>` :
       `<div class="card">Você está no modo demonstração.</div><button class="btn block" onclick="lsSet('cf_demo',null);location.reload()">Conectar à minha planilha</button>`}
     <span class="lbl" style="margin-top:18px">Tema neste aparelho</span>
-    <div class="seg" id="segTema">${[['auto','Automático'],['light','Claro'],['dark','Escuro']].map(([v, n]) => `<button type="button" class="${(lsGet('cf_tema') || 'auto') === v ? 'on' : ''}" onclick="setTema('${v}')">${n}</button>`).join('')}</div>
+    <div class="seg" id="segTema">${[['auto','Automático'],['light','Claro'],['dark','Escuro']].map(([v, n]) => `<button type="button" class="${(lsGet('cf_tema') || 'auto') === v ? 'on' : ''}" data-v="${v}" onclick="setTema('${v}')">${n}</button>`).join('')}</div>
     <p class="small muted" style="margin-top:-4px">Automático segue o modo claro/escuro do celular ou do computador.</p>
-    <p class="small muted" style="margin-top:16px">Os lançamentos são gravados direto na aba ${esc(S.sheetName)} (Tabela1). Fórmulas como "Saldo projetado" e "Categoria Dashboard" continuam sendo calculadas pelo Excel.</p>
-    ${!CLIENT_ID && S.mode==='graph' ? `<button class="btn sec sm" onclick="lsSet('cf_clientId',null);location.reload()">Trocar ID do aplicativo</button>` : ''}
-  </div>`;
-  document.body.appendChild(bg);
+    <p class="small muted" style="margin-top:16px">Os lançamentos são gravados direto na aba ${esc(S.sheetName)} (Tabela1). Fórmulas como "Saldo projetado" e "Categoria Dashboard" continuam sendo calculadas pelo Excel.</p>`);
 }
 function setTema(v){
   lsSet('cf_tema', v === 'auto' ? null : v);
-  if (v === 'auto') delete document.documentElement.dataset.theme; else document.documentElement.dataset.theme = v;
-  document.querySelectorAll('#segTema button').forEach((b, i) => b.classList.toggle('on', ['auto','light','dark'][i] === v));
+  aplicarTema(); marcarSeg('segTema', v);
   render(); // redesenha os gráficos com as cores do tema
 }
-async function sair(){ lsSet('cf_tab',null); lsSet('cf_cache',null); await msalApp.logoutRedirect({ account: msalApp.getActiveAccount() }); }
+async function sair(){ ['cf_tab','cf_cache','cf_itemId'].forEach(k => lsSet(k, null)); await msalApp.logoutRedirect({ account: msalApp.getActiveAccount() }); }
 async function recarregar(){
   if (S.mode !== 'graph') return toast('Modo demonstração');
   S.loading = true; render();
-  try { await carregarGraph(); } catch(e){ toast(isOffline(e) ? 'Sem internet — mostrando os dados guardados' : 'Erro: ' + e.message, 5000); }
+  let ok = false;
+  try { await carregarTudo(); ok = true; } catch(e){ toast(isOffline(e) ? 'Sem internet — mostrando os dados guardados' : 'Erro: ' + e.message, 5000); }
   S.loading = false; render();
-  enviarFila();
+  if (ok) enviarFila(true);
 }
 function telaInicial(msg){
-  const temId = !!clientId();
   $('#root').innerHTML = `<div class="wrap"><div class="login">
     <img src="icon.svg" alt=""><h1>Controle Financeiro</h1>
-    ${msg ? `<div class="alert bad" style="text-align:left">${ic('alert',18)}<span>${esc(msg)}</span></div>` : ''}
-    ${temId ? `<p class="muted" style="margin:0">Entre com a conta Microsoft onde está a planilha <b>Controle Financeiro.xlsx</b>.</p>
-      <button class="btn block" onclick="entrar()">Entrar com a conta Microsoft</button>` :
-    `<p class="muted" style="margin:0">Primeira vez? Cole o <b>ID do aplicativo (cliente)</b> criado no portal da Microsoft (o passo a passo está no LEIA-ME).</p>
-      <input class="i" id="cid" placeholder="ex.: 1a2b3c4d-…">
-      <button class="btn block" onclick="const v=$('#cid').value.trim(); if(!/^[0-9a-f-]{36}$/i.test(v)) return toast('ID inválido'); lsSet('cf_clientId',v); location.reload()">Salvar e continuar</button>`}
+    ${msg ? `<div class="alert" style="text-align:left">${ic('alert',18)}<span>${esc(msg)}</span></div>` : ''}
+    <p class="muted" style="margin:0">Entre com a conta Microsoft onde está a planilha <b>Controle Financeiro.xlsx</b>.</p>
+    <button class="btn block" onclick="entrar()">Entrar com a conta Microsoft</button>
     <button class="btn sec block" onclick="lsSet('cf_demo','1');location.reload()">Ver demonstração</button>
   </div></div>`;
 }
 async function entrar(){ await msalApp.loginRedirect({ scopes: SCOPES }); }
 
-/* ---------------- início ---------------- */
 (async function main(){
-  if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(r => r.update()).catch(() => {});
+  if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).catch(() => {});
+  window.aoMudarTema = () => { if (S.mode) render(); };
   document.addEventListener('keydown', e => {
-    if (e.key === 'Escape') return $('#sheet')?.remove();
+    if (e.key === 'Escape') return fecharSheet();
     const digitando = /INPUT|SELECT|TEXTAREA/.test(document.activeElement?.tagName || '');
-    if (!digitando && !e.ctrlKey && !e.metaKey && !e.altKey && (e.key === 'n' || e.key === 'N') && !$('#sheet') && S.mode){ e.preventDefault(); abrirForm(); }
+    if (!digitando && !e.ctrlKey && !e.metaKey && !e.altKey && e.key.toLowerCase() === 'n' && !$('#sheet') && S.mode){ e.preventDefault(); abrirForm(); }
   });
   if (lsGet('cf_demo')){
-    S.mode = 'demo'; S.rows = dadosDemo(); S.limites = { 'Lazer': 300, 'Alimentação': 1200 }; S.limitesOk = true; render(); return;
+    Object.assign(S, { mode: 'demo', rows: dadosDemo(), limites: { 'Lazer': 300, 'Alimentação': 1200 }, limitesRow: Object.fromEntries(CATS_LIMITE.map((c, i) => [c, i + 2])) });
+    return render();
   }
   window.addEventListener('online', () => { if (S.mode === 'graph') recarregar(); });
   if (!window.msal) return telaInicial('Não foi possível carregar a biblioteca de login da Microsoft. Verifique a internet.');
-  if (!clientId()) return telaInicial();
   $('#root').innerHTML = '<div class="center"><div class="spinner"></div><div class="muted">Conectando…</div></div>';
   try {
-    const logado = await initMsal();
-    if (!logado) return telaInicial();
-    S.mode = 'graph';
-    $('#root').innerHTML = '<div class="center"><div class="spinner"></div><div class="muted">Lendo a planilha…</div></div>';
-    try { await carregarGraph(); }
+    if (!await initMsal()) return telaInicial();
+    Object.assign(S, { mode: 'graph', mesMin: INICIO_CONTROLE });
+    // mostra na hora a última cópia guardada e atualiza com a planilha em seguida
+    const cacheDe = restaurarCache();
+    if (cacheDe) render(); else $('#root').innerHTML = '<div class="center"><div class="spinner"></div><div class="muted">Lendo a planilha…</div></div>';
+    try { await carregarTudo(); }
     catch(e){
-      // sem internet: usa a última cópia guardada no aparelho
-      let cache = null; try { cache = JSON.parse(lsGet('cf_cache')); } catch(_){}
-      if (!(isOffline(e) && cache)) throw e;
-      Object.assign(S, { rows: cache.rows, emptyRows: cache.emptyRows, sheetName: cache.sheetName, limites: cache.limites || {}, limitesRow: cache.limitesRow || {},
-        limitesOk: Object.keys(cache.limitesRow || {}).length > 0, offlineDesde: cache.t });
-      aplicarFila();
+      if (!cacheDe) throw e;
+      if (isOffline(e)) S.offlineDesde = cacheDe; else toast('Erro ao atualizar: ' + e.message, 5000);
     }
     render();
-    enviarFila();
+    if (!S.offlineDesde) enviarFila(true);
   } catch(e){
     console.error(e);
     telaInicial('Erro: ' + (e.errorMessage ? `${e.errorCode} — ${e.errorMessage}` : e.message));

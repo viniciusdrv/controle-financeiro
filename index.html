@@ -685,6 +685,8 @@ function resumoMes(mes){
     ent: soma(rs.filter(r => r.tipo === 'Entrada' || r.tipo === 'Retirada')), sai: soma(sai),
     inv: soma(rs.filter(r => r.tipo === 'Investimento')), cartao: soma(sai.filter(r => r.forma === 'Cartão')),
     pendente: soma(sai.filter(r => r.status !== 'Pago')), porCat,
+    // o que sobra na conta: o investimento também sai da conta (o saldo projetado já desconta)
+    get res(){ return this.ent - this.sai - this.inv; },
     menor: comSaldo.length ? comSaldo.reduce((a, b) => b.saldo < a.saldo ? b : a) : null
   };
   S._resumo.set(mes, res);
@@ -860,7 +862,7 @@ const telas = {
     <div class="kpis">
       <div class="kpi"><div class="l">Entradas</div><div class="v pos">${fmtBRL(r.ent)}</div></div>
       <div class="kpi"><div class="l">Saídas</div><div class="v">${fmtBRL(r.sai)}</div></div>
-      <div class="kpi"><div class="l">Resultado</div><div class="v ${r.ent-r.sai<0?'neg':'pos'}">${fmtBRL(r.ent - r.sai)}</div></div>
+      <div class="kpi" title="Entradas − saídas − investido no mês"><div class="l">Sobra na conta</div><div class="v ${r.res<0?'neg':'pos'}">${fmtBRL(r.res)}</div></div>
       <div class="kpi link" onclick="abrirFatura('${mes}')"><div class="l">${ic('card',15)}Cartão ${ic('right',13,2.2)}</div><div class="v">${fmtBRL(r.cartao)}</div></div>
       <div class="kpi"><div class="l">Investido no mês</div><div class="v">${fmtBRL(r.inv)}</div></div>
       <div class="kpi"><div class="l">Saídas a pagar</div><div class="v">${fmtBRL(r.pendente)}</div></div>
@@ -870,8 +872,8 @@ const telas = {
     <div class="card"><div class="h2row"><h2>Saídas por categoria</h2><button class="btn sec sm" onclick="abrirLimites()">${ic('target',15)}Limites</button></div>${Object.keys(r.porCat).length || Object.keys(S.limites).length ? `<div class="bars">${barras(r.porCat, S.limites, true)}</div>` : '<div class="empty">Sem saídas neste mês.</div>'}</div>
     </div><div class="col-b">
     <div class="card"><h2>Mês a mês</h2><div class="chartbox"><canvas id="chMeses"></canvas></div>
-      <div class="tablewrap" style="margin-top:10px"><table class="t"><thead><tr><th>Mês</th><th>Entradas</th><th>Saídas</th><th>Resultado</th></tr></thead><tbody>
-      ${meses.map(m => { const x = resumoMes(m), nome = `${mesAbrev(m)}/${m.slice(2,4)}`; return `<tr style="cursor:pointer" onclick="S.mes='${m}';render()"><td>${m===mes ? `<b>${nome}</b>` : nome}</td><td class="pos">${fmtBRL(x.ent)}</td><td class="neg">${fmtBRL(x.sai)}</td><td class="${x.ent-x.sai<0?'neg':''}">${fmtBRL(x.ent-x.sai)}</td></tr>`; }).join('')}
+      <div class="tablewrap" style="margin-top:10px"><table class="t"><thead><tr><th>Mês</th><th>Entradas</th><th>Saídas</th><th>Investido</th><th>Sobra</th></tr></thead><tbody>
+      ${meses.map(m => { const x = resumoMes(m), nome = `${mesAbrev(m)}/${m.slice(2,4)}`; return `<tr style="cursor:pointer" onclick="S.mes='${m}';render()"><td>${m===mes ? `<b>${nome}</b>` : nome}</td><td class="pos">${fmtBRL(x.ent)}</td><td class="neg">${fmtBRL(x.sai)}</td><td>${fmtBRL(x.inv)}</td><td class="${x.res<0?'neg':''}">${fmtBRL(x.res)}</td></tr>`; }).join('')}
       </tbody></table></div></div>
     </div></div>
     <div class="card"><h2>Categorias × meses</h2><div class="tablewrap">${tabelaCatMes(meses)}</div></div>`;

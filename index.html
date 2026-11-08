@@ -166,7 +166,6 @@ input[type=checkbox]{width:20px;height:20px;accent-color:var(--brand);flex:0 0 a
 .cal .dots{display:flex;justify-content:center;align-items:center;gap:3px;margin-top:6px;min-height:7px}
 .cal .dot,.legenda .dot{width:7px;height:7px;border-radius:50%;background:var(--c);flex:0 0 auto}
 .dot.vaz{background:transparent;border:1.5px solid var(--c)} .dot.prev{background:transparent;border:1.5px dashed var(--c)}
-.cal .mais{font-size:10px;color:var(--muted);font-weight:650;line-height:1}
 .cal .mk{position:absolute;top:3px;right:3px;color:var(--muted)}
 .cal .tot{display:none;font-size:11px;color:var(--muted);margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .legenda{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:12px;color:var(--muted);margin-top:12px}
@@ -212,6 +211,7 @@ table.t tr:last-child td{border-bottom:0}
 .chartbox{position:relative;height:210px}
 .legend{display:flex;gap:14px;font-size:12px;color:var(--muted);margin:-4px 0 8px}
 .legend span{display:flex;align-items:center;gap:6px} .legend i{width:14px;height:3px;border-radius:2px;background:var(--brand)} .legend i.d{background:repeating-linear-gradient(90deg,var(--brand) 0 4px,transparent 4px 7px)}
+.legend{flex-wrap:wrap;row-gap:4px} .legend i.r{height:1px;background:repeating-linear-gradient(90deg,var(--muted) 0 2px,transparent 2px 5px)} .legend i.p{width:7px;height:7px;border-radius:50%}
 
 /* janelas, avisos */
 .sheet-bg{position:fixed;inset:0;background:rgba(8,12,18,.45);backdrop-filter:blur(2px);z-index:20;display:flex;align-items:flex-end;justify-content:center;animation:fade .15s ease}
@@ -801,8 +801,8 @@ const telas = {
     ${sugCard}
     ${prevCard}
     ${limCard}
-    <div class="card"><div class="h2row"><h2>Saldo projetado</h2><span class="sub">últimos 45 dias e futuro</span></div>
-      <div class="legend"><span><i></i>Realizado</span><span><i class="d"></i>Projetado</span></div>
+    <div class="card"><div class="h2row"><h2>Saldo projetado</h2><span class="sub">até ${fmtData(ultimoDiaMes(addMes(ym(hoje), 1)))}</span></div>
+      <div class="legend"><span><i></i>Até hoje</span><span><i class="d"></i>Projetado</span><span><i class="r"></i>Reserva ${fmtBRL(RESERVA_MINIMA)}</span><span><i class="p"></i>Dia com lançamento</span></div>
       <div class="chartbox"><canvas id="chSaldo"></canvas></div></div>
     </div><div class="col-b">
     <div class="card"><div class="h2row"><h2>Próximas 3 semanas</h2><span class="sub">${proximos.length} pendente(s)</span></div>
@@ -899,8 +899,9 @@ function calendarioHTML(){
   const celula = d => {
     const itens = g[d] || [], s = saldos[d], dia = +d.slice(8);
     const cls = ['d', d === hoje ? 'hoje' : '', d === sel ? 'sel' : '', s != null && s < 0 ? 'bad' : s != null && s < RESERVA_MINIMA ? 'warn' : ''].join(' ');
-    const dots = itens.slice(0, 3).map(r => `<span class="dot ${r.status === 'Previsão' ? 'prev' : r.status === 'Pago' ? '' : 'vaz'}" style="--c:${COR_TIPO[r.tipo] || 'var(--muted)'}"></span>`).join('')
-      + (itens.length > 3 ? `<span class="mais">+${itens.length - 3}</span>` : '');
+    // um pontinho por tipo de movimento (saída paga, entrada, saída programada…), não por lançamento; ajustes "Marco zero" não contam
+    const tipos = [...new Set(itens.filter(r => r.status !== 'Marco zero').map(r => `${r.tipo}|${r.status === 'Previsão' ? 'prev' : r.status === 'Pago' ? '' : 'vaz'}`))];
+    const dots = tipos.slice(0, 4).map(k => { const [t, est] = k.split('|'); return `<span class="dot ${est}" style="--c:${COR_TIPO[t] || 'var(--muted)'}"></span>`; }).join('');
     const tot = itens.reduce((a, r) => a + sinal(r.tipo) * r.valor, 0);
     const mk = salarios.has(d) ? ic('wallet', 12, 2.2) : dia === CARTAO_VENCIMENTO ? ic('card', 12, 2.2) : '';
     return `<button type="button" class="${cls}" onclick="selDia('${d}')" aria-label="${fmtDataLonga(d)}: ${itens.length} lançamento(s)">
@@ -962,31 +963,47 @@ function corVar(n){ return getComputedStyle(document.documentElement).getPropert
 const tooltipBRL = { padding:10, cornerRadius:10, callbacks:{ label: x => `${x.dataset.label}: ${fmtBRL(x.parsed.y)}` } };
 const posRender = {
   home(){
-    const c = S._calc; if (!c || !window.Chart) return;
-    const porDia = new Map(); c.ord.forEach(r => porDia.set(r.data, r.saldo));
-    const ini = isoLocal(new Date(Date.now() - 45*864e5)), hoje = today();
-    const pts = [...porDia.entries()].filter(([d]) => d >= ini);
-    const real = pts.map(([d,v]) => d <= hoje ? v : null);
-    const proj = pts.map(([d,v], i) => (d >= hoje || (pts[i+1] && pts[i+1][0] > hoje)) ? v : null);
-    const brand = corVar('--brand'), muted = corVar('--muted'), line = corVar('--line');
-    const idxHoje = pts.findIndex(([d]) => d > hoje) - 1;
+    const c = S._calc; if (!c || !window.Chart || !c.ord.length) return;
+    // um ponto por dia: de 30 dias atrás (ou do 1º lançamento) até o fim do próximo mês
+    const hoje = today(), prim = c.ord[0].data;
+    const ini = [isoLocal(new Date(Date.now() - 30*864e5)), prim].sort()[1], fim = ultimoDiaMes(addMes(ym(hoje), 1));
+    const proxDia = d => isoLocal(new Date(new Date(d + 'T12:00').getTime() + 864e5));
+    const dias = []; for (let d = ini; d <= fim; d = proxDia(d)) dias.push(d);
+    const saldos = saldosDoMes(dias), valores = dias.map(d => saldos[d]);
+    const doDia = {}; c.ord.forEach(r => (doDia[r.data] = doDia[r.data] || []).push(r));
+    const idxHoje = dias.indexOf(hoje);
+    const brand = corVar('--brand'), muted = corVar('--muted'), line = corVar('--line'), warn = corVar('--warn'), neg = corVar('--neg');
+    const corDe = v => v < 0 ? neg : v < RESERVA_MINIMA ? warn : brand;
     const area = ({ chart }) => { const a = chart.chartArea; if (!a) return 'transparent';
-      const g = chart.ctx.createLinearGradient(0, a.top, 0, a.bottom); g.addColorStop(0, brand + '40'); g.addColorStop(1, brand + '00'); return g; };
+      const g = chart.ctx.createLinearGradient(0, a.top, 0, a.bottom); g.addColorStop(0, brand + '30'); g.addColorStop(1, brand + '00'); return g; };
     const linhaHoje = { id:'hoje', afterDatasetsDraw(ch){ if (idxHoje < 0) return; const x = ch.scales.x.getPixelForValue(idxHoje), { top, bottom } = ch.chartArea, k = ch.ctx;
-      k.save(); k.strokeStyle = muted; k.globalAlpha = .5; k.setLineDash([3,3]); k.beginPath(); k.moveTo(x, top); k.lineTo(x, bottom); k.stroke();
-      k.globalAlpha = 1; k.setLineDash([]); k.fillStyle = muted; k.font = '600 11px Inter, system-ui'; k.textAlign = 'center'; k.fillText('hoje', x, top + 10); k.restore(); } };
-    const linhaBase = { borderColor:brand, pointRadius:0, pointHoverRadius:4, tension:.3, spanGaps:true };
+      k.save(); k.strokeStyle = muted; k.globalAlpha = .6; k.setLineDash([3,3]); k.beginPath(); k.moveTo(x, top); k.lineTo(x, bottom); k.stroke();
+      k.globalAlpha = 1; k.setLineDash([]); k.fillStyle = muted; k.font = '600 11px Inter, system-ui'; k.textAlign = 'center'; k.fillText('hoje', x, top - 4); k.restore(); } };
+    const tituloDia = d => cap(new Date(d + 'T12:00').toLocaleDateString('pt-BR', { weekday:'short', day:'2-digit', month:'short' }).replace(/\./g, ''));
     charts.saldo = new Chart($('#chSaldo'), {
       type:'line',
-      data:{ labels: pts.map(([d]) => fmtData(d)), datasets:[
-        { ...linhaBase, label:'Realizado', data:real, backgroundColor:area, fill:true, borderWidth:2.5 },
-        { ...linhaBase, label:'Projetado', data:proj, backgroundColor:'transparent', borderDash:[5,4], borderWidth:2 }
+      data:{ labels: dias.map(fmtData), datasets:[
+        { label:'Saldo', data: valores, stepped: 'after', borderWidth: 2.5, fill: true, backgroundColor: area, spanGaps: false,
+          borderColor: brand,
+          segment: { // passado contínuo, futuro tracejado; amarelo abaixo da reserva, vermelho negativo
+            borderDash: s => s.p0DataIndex >= idxHoje && idxHoje >= 0 ? [5, 4] : undefined,
+            borderColor: s => corDe(Math.min(s.p0.parsed.y, s.p1.parsed.y)) },
+          pointRadius: dias.map(d => doDia[d] ? 3 : 0), pointHoverRadius: 5,
+          pointBackgroundColor: valores.map(v => v == null ? brand : corDe(v)), pointBorderWidth: 0 },
+        { label:'Reserva', data: dias.map(() => RESERVA_MINIMA), borderColor: muted, borderWidth: 1, borderDash: [2, 3], pointRadius: 0, pointHoverRadius: 0, fill: false }
       ]},
       plugins:[linhaHoje],
-      options:{ maintainAspectRatio:false, interaction:{ mode:'index', intersect:false }, layout:{ padding:{ top:14 } },
-        plugins:{ legend:{ display:false }, tooltip:{ ...tooltipBRL, displayColors:false, filter: x => x.parsed.y != null } },
-        scales:{ x:{ ticks:{ color:muted, maxTicksLimit:6, maxRotation:0, font:{ size:11 } }, grid:{ display:false }, border:{ display:false } },
-                 y:{ ticks:{ color:muted, maxTicksLimit:5, font:{ size:11 }, callback:compacto }, grid:{ color:line }, border:{ display:false } } } }
+      options:{ maintainAspectRatio:false, interaction:{ mode:'index', intersect:false }, layout:{ padding:{ top:18 } },
+        plugins:{ legend:{ display:false },
+          tooltip:{ ...tooltipBRL, displayColors:false, filter: x => x.datasetIndex === 0 && x.parsed.y != null,
+            callbacks:{
+              title: x => tituloDia(dias[x[0].dataIndex]),
+              label: x => `Saldo ao fim do dia: ${fmtBRL(x.parsed.y)}`,
+              afterBody: x => { const it = doDia[dias[x[0].dataIndex]] || [];
+                return it.slice(0, 5).map(r => `${sinal(r.tipo) > 0 ? '+' : '−'}${fmtBRL(r.valor)}  ${r.desc}${r.status !== 'Pago' ? ` (${r.status.toLowerCase()})` : ''}`)
+                  .concat(it.length > 5 ? [`+ ${it.length - 5} lançamento(s)`] : []); } } } },
+        scales:{ x:{ ticks:{ color:muted, maxTicksLimit:7, maxRotation:0, autoSkipPadding:12, font:{ size:11 } }, grid:{ display:false }, border:{ display:false } },
+                 y:{ suggestedMin: 0, ticks:{ color:muted, maxTicksLimit:5, font:{ size:11 }, callback:compacto }, grid:{ color:line }, border:{ display:false } } } }
     });
   },
   analise(){

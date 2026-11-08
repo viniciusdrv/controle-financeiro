@@ -750,6 +750,27 @@ function itemHTML(r, { saldo, semData, noclick, pagar } = {}){
     <div class="val ${cls}">${s > 0 ? '+' : '−'}${fmtBRL(r.valor)}${saldo && r.saldo != null ? `<small>saldo ${fmtBRL(r.saldo)}</small>` : ''}</div>
     ${pagar ? acaoHTML(r) : ''}</li>`;
 }
+/* Compras no cartão da mesma fatura (mês) viram uma linha só; tocar nela abre a fatura. Só visual: na planilha nada muda. */
+function agruparFaturas(rs){
+  const porMes = {};
+  rs.forEach(r => { if (r.data && ehCartao(r) && !r.pendente) (porMes[ym(r.data)] = porMes[ym(r.data)] || []).push(r); });
+  const grupos = Object.entries(porMes).filter(([, it]) => it.length > 1);
+  if (!grupos.length) return rs;
+  const dentro = new Set(grupos.flatMap(([, it]) => it));
+  return rs.filter(r => !dentro.has(r)).concat(grupos.map(([mes, itens]) => {
+    const ult = [...itens].sort(porData).at(-1);
+    return { grupo: true, mes, itens, tipo: 'Saída', valor: soma(itens), data: ult.data, row: ult.row, saldo: ult.saldo };
+  }));
+}
+function grupoHTML(g, { saldo, pagar } = {}){
+  const pend = g.itens.filter(r => r.status !== 'Pago').length;
+  return `<li class="item" onclick="abrirFatura('${g.mes}')">${avatar('Cartão')}
+    <div class="main"><div class="d"><span class="tx">Fatura do cartão · ${mesCurto(g.data)}</span></div>
+      <div class="s">${pend ? '<span class="badge Programado">A pagar</span>' : ''}${g.itens.length} compras${pend && pend < g.itens.length ? ` · ${pend} a pagar` : pend ? '' : ' · todas pagas'}</div></div>
+    <div class="val">−${fmtBRL(g.valor)}${saldo && g.saldo != null ? `<small>saldo ${fmtBRL(g.saldo)}</small>` : ''}</div>
+    ${pagar && pend ? `<button class="paybtn" title="Marcar fatura como paga" aria-label="Marcar fatura de ${mesCurto(g.data)} como paga" onclick="event.stopPropagation();pagarFatura('${g.mes}')">${ic('check',17,2.4)}</button>` : ''}</li>`;
+}
+const linhaHTML = (r, opts) => r.grupo ? grupoHTML(r, opts) : itemHTML(r, opts);
 /* versão enxuta (quadro de previsões): valor embaixo do nome, sem rótulo de status */
 const itemCompactoHTML = r => `<li class="item" onclick="abrirForm(${r.row})">${avatar(r.cat)}
   <div class="main">${tituloItem(r)}<div class="s"><b>${fmtBRL(r.valor)}</b> · ${esc(ehCartao(r) ? quando(r) : r.forma)}</div></div>${acaoHTML(r)}</li>`;
@@ -807,7 +828,7 @@ const telas = {
     </div><div class="col-b">
     <div class="card"><div class="h2row"><h2>Próximas 3 semanas</h2><span class="sub">${proximos.length} pendente(s)</span></div>
       ${atrasados.length ? `<div class="alert">${ic('alert',18)}<span>${atrasados.length} lançamento(s) com data passada ainda não marcado(s) como pago</span></div>` : ''}
-      ${proximos.length ? `<ul class="list">${proximos.map(r => itemHTML(r, { pagar:true })).join('')}</ul>` : '<div class="empty">Nada pendente nas próximas 3 semanas.</div>'}</div>
+      ${proximos.length ? `<ul class="list">${agruparFaturas(proximos).sort(porData).map(r => linhaHTML(r, { pagar:true })).join('')}</ul>` : '<div class="empty">Nada pendente nas próximas 3 semanas.</div>'}</div>
     ${totPrev ? `<div class="card"><div class="h2row"><h2>Ainda previsto até o salário</h2><span class="sub">${fmtBRL(totPrev)}</span></div><div class="bars">${barras(previstos)}</div></div>` : ''}
     </div></div>`;
   },
@@ -861,13 +882,14 @@ function listaCorpoHTML(){
   const q = S.busca.trim().toLowerCase();
   let rs = q ? S.rows.filter(r => `${r.desc} ${r.cat} ${r.obs}`.toLowerCase().includes(q)) : S.rows.filter(r => r.data && ym(r.data) === S.mes);
   if (S.filtroCat) rs = rs.filter(r => r.cat === S.filtroCat);
+  if (!q && !S.filtroCat) rs = agruparFaturas(rs); // busca e filtro mostram as compras do cartão uma a uma
   rs = [...rs].sort((a, b) => porData(b, a));
   const grupos = {}; rs.forEach(r => (grupos[r.data] = grupos[r.data] || []).push(r));
   if (!rs.length) return '<div class="empty">Nenhum lançamento.</div>';
   return Object.entries(grupos).map(([d, items]) => {
     const tot = items.reduce((s, r) => s + sinal(r.tipo) * r.valor, 0);
     const dia = cap(new Date(d + 'T12:00').toLocaleDateString('pt-BR', { weekday:'short', day:'2-digit', month:'short', ...(q ? { year:'numeric' } : {}) }).replace(/\./g,''));
-    return `<div class="grouph"><span>${dia}</span><span>${tot >= 0 ? '+' : '−'}${fmtBRL(Math.abs(tot))}</span></div><div class="card" style="padding:2px 14px;margin-bottom:6px"><ul class="list">${items.map(r => itemHTML(r, { saldo:true, semData:true })).join('')}</ul></div>`;
+    return `<div class="grouph"><span>${dia}</span><span>${tot >= 0 ? '+' : '−'}${fmtBRL(Math.abs(tot))}</span></div><div class="card" style="padding:2px 14px;margin-bottom:6px"><ul class="list">${items.map(r => linhaHTML(r, { saldo:true, semData:true })).join('')}</ul></div>`;
   }).join('');
 }
 /* ---- calendário do mês ---- */
@@ -918,11 +940,10 @@ function calendarioHTML(){
 }
 function diaHTML(){
   const g = lancDoMes(), d = diaAtual(g), itens = g[d] || [], saldo = saldosDoMes([d])[d];
-  const fatura = itens.filter(ehCartao);
+  const linhas = S.filtroCat ? itens : agruparFaturas(itens);
   const tit = cap(new Date(d + 'T12:00').toLocaleDateString('pt-BR', { weekday:'short', day:'numeric', month:'short' }).replace(/\./g, ''));
   return `<div class="dia-head"><h2>${tit}</h2>${saldo != null ? `<span class="small muted">saldo ao fim do dia <b style="color:var(--text)">${fmtBRL(saldo)}</b></span>` : ''}</div>
-    ${fatura.length ? `<div class="small muted">Fatura do cartão · ${fatura.length} lançamento(s) · ${fmtBRL(soma(fatura))}</div>` : ''}
-    ${itens.length ? `<ul class="list" style="margin-top:4px">${itens.map(r => itemHTML(r, { pagar: true, semData: true })).join('')}</ul>`
+    ${itens.length ? `<ul class="list" style="margin-top:4px">${linhas.map(r => linhaHTML(r, { pagar: true, semData: true })).join('')}</ul>`
       : `<div class="empty" style="padding:18px 0 8px">Nenhum lançamento neste dia.</div>`}`;
 }
 function selDia(d){ S.diaSel = d; $('#calBox').innerHTML = calendarioHTML(); $('#diaBox').innerHTML = diaHTML(); }
@@ -1315,6 +1336,7 @@ function abrirFatura(mes){
   const rs = S.rows.filter(r => r.data && ym(r.data) === mes && ehCartao(r)).sort(porData);
   const tot = resumoMes(mes).cartao, pago = soma(rs.filter(r => r.status === 'Pago')), ant = resumoMes(addMes(mes, -1)).cartao;
   const porCat = {}; rs.forEach(r => porCat[r.cat] = (porCat[r.cat] || 0) + r.valor);
+  const pendentes = rs.filter(r => r.status !== 'Pago' && !r.pendente);
   abrirSheet(`${cabecalho(`Cartão · ${nomeMes(mes)}`)}
     <div class="kpis">
       <div class="kpi big"><div class="l">Total no mês (${rs.length} lançamentos)</div><div class="v">${fmtBRL(tot)}</div>
@@ -1323,8 +1345,19 @@ function abrirFatura(mes){
       <div class="kpi"><div class="l">Programado / previsto</div><div class="v">${fmtBRL(tot - pago)}</div></div>
     </div>
     ${rs.length ? `<div class="card"><h2>Por categoria</h2><div class="bars">${barras(porCat)}</div></div>
-    <div class="card" style="padding:2px 14px"><ul class="list">${rs.map(r => itemHTML(r, { noclick: true })).join('')}</ul></div>` : '<div class="empty">Nenhuma compra no cartão neste mês.</div>'}
-    <p class="small muted">Considera as saídas com forma "Cartão" pela data lançada, igual ao quadro CARTÃO do Dashboard.</p>`);
+    ${pendentes.length ? `<button class="btn block" style="margin-bottom:14px" onclick="pagarFatura('${mes}')">${ic('check', 18, 2.4)}Marcar fatura como paga (${fmtBRL(soma(pendentes))})</button>` : ''}
+    <div class="card" style="padding:2px 14px"><ul class="list">${rs.map(r => itemHTML(r)).join('')}</ul></div>` : '<div class="empty">Nenhuma compra no cartão neste mês.</div>'}
+    <p class="small muted">Toque numa compra para editar ou excluir. Considera as saídas com forma "Cartão" pela data lançada, igual ao quadro CARTÃO do Dashboard.</p>`);
+}
+/* marca como pagas todas as compras ainda pendentes da fatura do mês */
+async function pagarFatura(mes){
+  const pend = S.rows.filter(r => r.data && ym(r.data) === mes && ehCartao(r) && r.status !== 'Pago' && !r.pendente);
+  if (!pend.length) return;
+  if (!confirm(`Marcar as ${pend.length} compra(s) da fatura de ${mesLongo(mes).toLowerCase()} como pagas (${fmtBRL(soma(pend))})?`)) return;
+  try {
+    for (const r of pend) await db().marcarPago(r.row);
+    fecharSheet(); toast(`Fatura de ${mesLongo(mes).toLowerCase()} marcada como paga ✓`); render();
+  } catch(e){ toast('Erro: ' + e.message, 5000); render(); }
 }
 
 /* ---- limites por categoria ---- */

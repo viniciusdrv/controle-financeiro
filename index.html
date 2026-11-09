@@ -683,7 +683,7 @@ function resumoMes(mes){
   const comSaldo = rs.filter(r => r.saldo != null);
   const res = {
     ent: soma(rs.filter(r => r.tipo === 'Entrada' || r.tipo === 'Retirada')), sai: soma(sai),
-    inv: soma(rs.filter(r => r.tipo === 'Investimento')), cartao: soma(sai.filter(r => r.forma === 'Cartão')),
+    inv: soma(rs.filter(r => r.tipo === 'Investimento' && r.status !== 'Marco zero')) /* acertos "Marco zero" não são movimento do mês */, cartao: soma(sai.filter(r => r.forma === 'Cartão')),
     pendente: soma(sai.filter(r => r.status !== 'Pago')), porCat,
     // o que sobra na conta: o investimento também sai da conta (o saldo projetado já desconta)
     get res(){ return this.ent - this.sai - this.inv; },

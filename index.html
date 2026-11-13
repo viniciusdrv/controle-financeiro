@@ -418,7 +418,8 @@ const S = {
   diaSel: null,                                           // dia tocado no calendário
   loading: false,
   limites: {}, limitesRow: {},   // aba "Limites": valor por categoria e linha de cada categoria
-  offlineDesde: null,            // mostrando a cópia guardada no aparelho (sem internet)
+  offlineDesde: null,
+  bloqueioExcel: false,          // Microsoft recusou abrir a planilha (ver avisoExcelHTML)            // mostrando a cópia guardada no aparelho (sem internet)
   fila: lerFila(),               // lançamentos feitos sem internet, aguardando envio
   _calc: null, _resumo: new Map(), _meses: null // derivados, recalculados a cada render
 };
@@ -461,7 +462,12 @@ async function graph(method, path, body, tentativa=0){
     });
   } catch(e){ throw erroOffline(); }
   if ((r.status === 429 || r.status >= 500) && tentativa < 2){ await new Promise(ok=>setTimeout(ok, 1200*(tentativa+1))); return graph(method, path, body, tentativa+1); }
-  if (!r.ok){ let m = r.status + ''; try{ const j = await r.json(); m = j.error?.message || m; }catch(e){} throw Object.assign(new Error(m), { status: r.status }); }
+  if (!r.ok){
+    let m = r.status + '', code = ''; try{ const j = await r.json(); m = j.error?.message || m; code = j.error?.code || ''; }catch(e){}
+    // falha conhecida da Microsoft em contas pessoais: libera depois que a planilha é aberta uma vez no Excel online
+    if (code === 'FileOpenUserUnauthorized'){ S.bloqueioExcel = true; m = 'A Microsoft bloqueou a abertura da planilha. Abra-a uma vez no Excel online e tente de novo.'; }
+    throw Object.assign(new Error(m), { status: r.status, code });
+  }
   return r.status === 204 ? null : r.json();
 }
 async function getItemId(){
@@ -470,6 +476,13 @@ async function getItemId(){
   itemId = (await graph('GET', `/me/drive/root:${p}?$select=id`)).id;
   lsSet('cf_itemId', itemId);
   return itemId;
+}
+/* endereço da planilha no Excel online (para o aviso de bloqueio) */
+async function garantirWebUrl(){ if (lsGet('cf_webUrl')) return; const it = await graph('GET', `/me/drive/items/${await getItemId()}?$select=webUrl`); lsSet('cf_webUrl', it.webUrl); }
+function avisoExcelHTML(){
+  const url = lsGet('cf_webUrl');
+  return `<div class="demo-banner" style="flex-wrap:wrap;background:var(--neg-soft);color:var(--neg)">${ic('alert',16)} A Microsoft bloqueou a leitura da planilha pelo app (falha conhecida dela). Abra a planilha uma vez no Excel online e toque em Tentar de novo.
+    <span style="display:flex;gap:8px;width:100%;justify-content:center;margin-top:6px">${url ? `<a class="btn sm" href="${esc(url)}" target="_blank" rel="noopener">Abrir no Excel online</a>` : ''}<button class="btn sec sm" onclick="recarregar()">Tentar de novo</button></span></div>`;
 }
 const wb = async () => `/me/drive/items/${await getItemId()}/workbook`;
 const ws = async (nome = S.sheetName) => `${await wb()}/worksheets('${encodeURIComponent(nome)}')`;
@@ -523,7 +536,8 @@ async function carregarTudo(){
     itemId = null; lsSet('cf_itemId', null);
     await Promise.all([carregarTabela(), carregarLimites()]);
   }
-  S.offlineDesde = null;
+  S.offlineDesde = null; S.bloqueioExcel = false;
+  if (!lsGet('cf_webUrl')) garantirWebUrl().catch(() => {});
   salvarCache();
 }
 
@@ -717,6 +731,7 @@ function render(){
     <div class="content">
     ${S.mode === 'demo' ? banner('alert', 'Modo demonstração — dados fictícios, nada é gravado na planilha') : ''}
     ${S.offlineDesde ? banner('wifioff', `Sem internet — dados de ${new Date(S.offlineDesde).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}. Novos lançamentos são enviados depois.`) : ''}
+    ${S.bloqueioExcel ? avisoExcelHTML() : ''}
     ${S.fila.length ? banner('clock', `${S.fila.length} lançamento(s) guardado(s) no aparelho, aguardando internet`) : ''}
     <header class="top"><img class="logo" src="icon.svg" alt=""><h1>${titulo}<small>${hojeTxt}</small></h1>
       <button class="iconbtn" title="Atualizar" aria-label="Atualizar" onclick="recarregar()">${ic('refresh',19)}</button></header>
@@ -1415,7 +1430,8 @@ async function recarregar(){
   if (S.mode !== 'graph') return toast('Modo demonstração');
   S.loading = true; render();
   let ok = false;
-  try { await carregarTudo(); ok = true; } catch(e){ toast(isOffline(e) ? 'Sem internet — mostrando os dados guardados' : 'Erro: ' + e.message, 5000); }
+  try { await carregarTudo(); ok = true; }
+  catch(e){ if (S.bloqueioExcel) await garantirWebUrl().catch(() => {}); else toast(isOffline(e) ? 'Sem internet — mostrando os dados guardados' : 'Erro: ' + e.message, 5000); }
   S.loading = false; render();
   if (ok) enviarFila(true);
 }
@@ -1454,12 +1470,13 @@ async function entrar(){ await msalApp.loginRedirect({ scopes: SCOPES }); }
     try { await carregarTudo(); }
     catch(e){
       if (!cacheDe) throw e;
-      if (isOffline(e)) S.offlineDesde = cacheDe; else toast('Erro ao atualizar: ' + e.message, 5000);
+      if (isOffline(e)) S.offlineDesde = cacheDe; else if (S.bloqueioExcel) await garantirWebUrl().catch(() => {}); else toast('Erro ao atualizar: ' + e.message, 5000);
     }
     render();
     if (!S.offlineDesde) enviarFila(true);
   } catch(e){
     console.error(e);
+    if (S.bloqueioExcel){ await garantirWebUrl().catch(() => {}); return render(); } // mostra o app com o aviso e o botão do Excel online
     telaInicial('Erro: ' + (e.errorMessage ? `${e.errorCode} — ${e.errorMessage}` : e.message));
   }
 })();

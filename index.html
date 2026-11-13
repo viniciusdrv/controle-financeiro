@@ -675,7 +675,9 @@ function calcular(){
   for (const r of ord){ if (r.status !== 'Marco zero') acc += sinal(r.tipo) * r.valor; r.saldo = Math.round(acc*100)/100; }
   const saldoDe = rs => rs.reduce((s, r) => s + sinal(r.tipo) * r.valor, 0);
   const dinheiro = saldoDe(validos.filter(r => r.data <= hoje && r.status !== 'Marco zero' && r.forma === 'Dinheiro'));
-  const investido = soma(validos.filter(r => r.tipo === 'Investimento')) - soma(validos.filter(r => r.tipo === 'Retirada'));
+  // investido hoje: só o que já aconteceu (pago ou acerto "Marco zero", com data até hoje); aportes programados/previstos ainda não contam
+  const realizado = validos.filter(r => r.data <= hoje && (r.status === 'Pago' || r.status === 'Marco zero'));
+  const investido = soma(realizado.filter(r => r.tipo === 'Investimento')) - soma(realizado.filter(r => r.tipo === 'Retirada'));
   let menor = null;
   for (const r of ord) if (r.data >= hoje && (!menor || r.saldo < menor.saldo)) menor = r;
   const proxSal = ord.find(r => r.desc === 'Salário' && r.data > hoje);
